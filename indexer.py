@@ -8,6 +8,7 @@ import pickle
 from Posting import Posting
 
 totalFiles = 100
+lemmatizer = nltk.stem.WordNetLemmatizer()
 
 def readJsonFiles(folderPath):
 
@@ -52,6 +53,7 @@ def parseDocumentIntoTokens(jsonFile):
 
             if len(totalText) != 0:
                 tokens = [string for string in nltk.word_tokenize(totalText) if len(string) > 1] # Remove single character tokens like 's' and ','
+                tokens = [lemmatizer.lemmatize(token) for token in tokens]
                 return Counter(tokens) # Transform into a dictionary of token strings and their frequency
             
         except Exception as e:
