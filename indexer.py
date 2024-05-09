@@ -1,29 +1,107 @@
 import os
 import json
 import nltk
+import shelve
+from collections import defaultdict, Counter
+from bs4 import BeautifulSoup
+import pickle
+from Posting import Posting
 
-def readJsonFiles(folder_path):
-    json_set = set()
-    for root, dirs, files in os.walk(folder_path):
+totalFiles = 100
+
+def readJsonFiles(folderPath):
+
+    jsonSet = set()
+    for root, dirs, files in os.walk(folderPath):
+
         for file in files:
+            # Only read json files
             if file.endswith(".json"):
-                file_path = os.path.join(root, file)
-                with open(file_path, "r") as f:
-                    json_data = json.load(f)
-                    json_set.add(json.dumps(json_data))
+                filePath = os.path.join(root, file)
+                with open(filePath, "r") as f:
 
+                    jsonData = json.load(f)
+                    jsonSet.add(json.dumps(jsonData))
+
+                    # Uncomment in case we want to limit our data set for time
+                    # if len(jsonSet) == totalFiles:
+                    #     return jsonSet
+
+        print(f"Finished reading {root}")
+
+        # Recurse through the directories to get all jsons
         for dir in dirs:
-            json_set.union(readJsonFiles(os.path.join(root, dir)))
-    print(len(json_set))
-    return json_set
+            jsonSet.union(readJsonFiles(os.path.join(root, dir)))
 
-def tokenizeJsonFiles(json_set):
-    tokenized_set = set()
-    for json_data in json_set:
-        tokens = nltk.word_tokenize(json_data)
-        tokenized_set.add(tuple(tokens))
-    return tokenized_set
+    return jsonSet
+
+def parseDocumentIntoTokens(jsonFile):
+
+    content = jsonFile["content"]
+    # Check to ensure that content is html
+    if not content.startswith("<!DOCTYPE html>"):
+        return Counter()
     
+    soup = BeautifulSoup(content, "html.parser")
+
+    # BeautifulSoup shouuld be able to handle bad HTML, but just in case include some error handling
+    if soup:
+        try: # Try Catch for getting the text from the soup
+
+            totalText = soup.get_text()
+
+            if len(totalText) != 0:
+                tokens = [string for string in nltk.word_tokenize(totalText) if len(string) > 1] # Remove single character tokens like 's' and ','
+                return Counter(tokens) # Transform into a dictionary of token strings and their frequency
+            
+        except Exception as e:
+            print(e)
+            return Counter()
+        
+    return Counter()
+        
+
+def buildIndex(jsonSet):
+    # Function from lecture notes
+
+    indexHashTable = defaultdict(list)
+    index = 0
+
+    for jsonFile in jsonSet:
+
+        jsonFile = json.loads(jsonFile)
+        index += 1
+        tokens = parseDocumentIntoTokens(jsonFile)
+        # It says remove duplicates but we dont have to because we are counting frequency?
+
+        if len(tokens) != 0:
+            for token, count in tokens.items():
+                indexHashTable[token].append(Posting(index, count, jsonFile["url"]))
+                #print("Indexed document ", jsonFile["url"])
+        else:
+            print("No tokens found in document ", jsonFile["url"])
+            index -= 1
+    
+    # Save the index data to shelve
+    with shelve.open("indexTable") as indexTable:
+        if len(indexTable) != 0:
+            del indexTable["indexTable"]
+        indexTable["indexTable"] = indexHashTable
+    
+    # SortAndWriteToDisk(indexHashTable, name)
+    with open("indexHashTable.pickle", "wb") as name:
+        pickle.dump(indexHashTable, name)
+    
+    # Record the number of indexed documents, unique tokens, and the total size of the index
+    # (Might be worth moving this outside of this function)
+    with shelve.open("indexedDocuments") as indexedDocuments:
+        indexedDocuments["indexedDocuments"] = index
+    with shelve.open("uniqueTokens") as uniqueTokens:
+        uniqueTokens["uniqueTokens"] = len(indexHashTable)
+    with shelve.open("totalSize") as totalSize:
+        totalSize["kilobytes"] = "{:.2f} KB".format(os.path.getsize('indexHashTable.pickle') / 1024)
+
+    return indexHashTable
 
 if __name__ == "__main__":
 
@@ -31,8 +109,18 @@ if __name__ == "__main__":
     analyst_folder = "\ANALYST"
     dev_folder = "\DEV"
 
-    analyst_json_set = readJsonFiles(currentPath + analyst_folder)
-    dev_json_set = readJsonFiles(currentPath + dev_folder)
-    tokenizeJsonFiles(analyst_json_set)
-    tokenizeJsonFiles(dev_json_set)
+    with shelve.open("jsonSet") as jsonSet:
+
+        if len(jsonSet) == 0:
+            jsonSet["AnalystJson"] = (readJsonFiles(currentPath + analyst_folder))
+            print("Analyst data set loaded")
+            #jsonSet["DevJson"] = (readJsonFiles(currentPath + dev_folder))
+            #print("Dev data set loaded")
+
+        else: 
+            print("Data already exists in the shelve")
+
+        buildIndex(jsonSet["AnalystJson"])
+
+
     
