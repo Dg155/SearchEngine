@@ -39,7 +39,7 @@ def parseDocumentIntoTokens(jsonFile):
 
     content = jsonFile["content"]
     # Check to ensure that content is html
-    if not content.startswith("<!DOCTYPE html>"):
+    if not content.startswith("<!DOCTYPE html>") and not content.startswith("<html>"):
         return Counter()
     
     soup = BeautifulSoup(content, "html.parser")
@@ -66,6 +66,7 @@ def buildIndex(jsonSet):
 
     indexHashTable = defaultdict(list)
     index = 0
+    documentsSkipped = 0
 
     for jsonFile in jsonSet:
 
@@ -80,6 +81,7 @@ def buildIndex(jsonSet):
                 #print("Indexed document ", jsonFile["url"])
         else:
             print("No tokens found in document ", jsonFile["url"])
+            documentsSkipped += 1
             index -= 1
     
     # Save the index data to shelve
@@ -92,12 +94,16 @@ def buildIndex(jsonSet):
     with open("indexHashTable.pickle", "wb") as name:
         pickle.dump(indexHashTable, name)
     
-    # Record the number of indexed documents, unique tokens, and the total size of the index
+    # Record the number of indexed documents, number of skipped documents, unique tokens, top tokens, and the total size of the index
     # (Might be worth moving this outside of this function)
     with shelve.open("indexedDocuments") as indexedDocuments:
         indexedDocuments["indexedDocuments"] = index
+    with shelve.open("skippedDocuments") as skippedDocuments:
+        skippedDocuments["skippedDocuments"] = documentsSkipped
     with shelve.open("uniqueTokens") as uniqueTokens:
         uniqueTokens["uniqueTokens"] = len(indexHashTable)
+    with shelve.open("topTokens") as topTokens:
+        topTokens["topTokens"] = {key:len(value) for (key,value) in sorted(indexHashTable.items(), key=lambda x: len(x[1]), reverse=True)[:50]}
     with shelve.open("totalSize") as totalSize:
         totalSize["kilobytes"] = "{:.2f} KB".format(os.path.getsize('indexHashTable.pickle') / 1024)
 

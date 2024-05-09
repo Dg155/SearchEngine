@@ -1,9 +1,64 @@
 ----- Indexed Documents -----
-1927
+1946
 ------------------
 ----- Unique Tokens -----
-24091
+24627
 ------------------
 ----- Total Size -----
-19262.00 KB
+19381.38 KB
+------------------
+----- Skipped Documents -----
+42
+------------------
+----- Top Tokens -----
+Research 1946
+the 1942
+to 1937
+Science 1934
+Faculty 1931
+Computer 1931
+Students 1931
+Series 1929
+UC 1929
+Areas 1928
+News 1928
+Feedback 1928
+Explore 1927
+Contact 1927
+Centers 1927
+Graduate 1927
+Degrees 1927
+Undergraduate 1927
+Seminar 1927
+Admissions 1927
+2019 1927
+Regents 1927
+Privacy 1927
+Policy 1927
+of 1915
+for 1858
+and 1851
+Impact 1836
+in 1778
+from 1774
+that 1773
+University 1659
+Irvine 1631
+at 1621
+Information 1592
+California 1579
+Ph.D. 1575
+We 1571
+on 1570
+Engineering 1567
+October 1561
+Department 1551
+September 1536
+Read 1533
+Search 1528
+Map 1527
+Software 1520
+Student 1494
+Schedule 1493
+Past 1491
 ------------------

@@ -24,5 +24,11 @@ if __name__ == "__main__":
 
         with shelve.open("totalSize") as totalSize:
             generate_report("Total Size", totalSize["kilobytes"], f)
+
+        with shelve.open("skippedDocuments") as skippedDocuments:
+            generate_report("Skipped Documents", skippedDocuments["skippedDocuments"], f)
+
+        with shelve.open("topTokens") as topTokens:
+            generate_report("Top Tokens", topTokens["topTokens"], f)
     
         
