@@ -8,7 +8,6 @@ import pickle
 from Posting import Posting
 
 totalFiles = 100
-lemmatizer = nltk.stem.WordNetLemmatizer()
 
 def readJsonFiles(folderPath):
 
@@ -116,6 +115,11 @@ if __name__ == "__main__":
     currentPath = os.getcwd()
     analyst_folder = "\ANALYST"
     dev_folder = "\DEV"
+
+    nltk.download('punkt')
+    nltk.download('wordnet')
+    lemmatizer = nltk.stem.WordNetLemmatizer()
+
 
     with shelve.open("jsonSet") as jsonSet:
 
