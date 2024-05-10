@@ -86,28 +86,33 @@ def buildIndex(jsonSet):
             index -= 1
     
     # Save the index data to shelve
-    with shelve.open("indexTable") as indexTable:
+    with shelve.open("indexTable.shelve") as indexTable:
         if len(indexTable) != 0:
             del indexTable["indexTable"]
         indexTable["indexTable"] = indexHashTable
+        indexTable.sync()
     
     # SortAndWriteToDisk(indexHashTable, name)
-    with open("indexHashTable.pickle", "wb") as name:
+    with open("indexHashTable.pickle", "ab") as name:
         pickle.dump(indexHashTable, name)
     
     # Record the number of indexed documents, number of skipped documents, unique tokens, top tokens, and the total size of the index
     # (Might be worth moving this outside of this function)
-    with shelve.open("indexedDocuments") as indexedDocuments:
-        indexedDocuments["indexedDocuments"] = index
-    with shelve.open("skippedDocuments") as skippedDocuments:
+    with shelve.open("indexedDocuments.shelve") as indexedDocuments:
+        indexedDocuments["indexedDocumesnts"] = index
+        indexedDocuments.sync()
+    with shelve.open("skippedDocuments.shelve") as skippedDocuments:
         skippedDocuments["skippedDocuments"] = documentsSkipped
-    with shelve.open("uniqueTokens") as uniqueTokens:
+        skippedDocuments.sync()
+    with shelve.open("uniqueTokens.shelve") as uniqueTokens:
         uniqueTokens["uniqueTokens"] = len(indexHashTable)
-    with shelve.open("topTokens") as topTokens:
+        uniqueTokens.sync()
+    with shelve.open("topTokens.shelve") as topTokens:
         topTokens["topTokens"] = {key:len(value) for (key,value) in sorted(indexHashTable.items(), key=lambda x: len(x[1]), reverse=True)[:50]}
-    with shelve.open("totalSize") as totalSize:
+        topTokens.sync()
+    with shelve.open("totalSize.shelve") as totalSize:
         totalSize["kilobytes"] = "{:.2f} KB".format(os.path.getsize('indexHashTable.pickle') / 1024)
-
+        totalSize.sync()
     return indexHashTable
 
 if __name__ == "__main__":
@@ -121,18 +126,24 @@ if __name__ == "__main__":
     lemmatizer = nltk.stem.WordNetLemmatizer()
 
 
-    with shelve.open("jsonSet") as jsonSet:
+    with shelve.open("jsonSet.shelve") as jsonSet:
 
         if len(jsonSet) == 0:
             jsonSet["AnalystJson"] = (readJsonFiles(currentPath + analyst_folder))
+            jsonSet.sync()
             print("Analyst data set loaded")
-            #jsonSet["DevJson"] = (readJsonFiles(currentPath + dev_folder))
-            #print("Dev data set loaded")
+            jsonSet["DevJson"] = (readJsonFiles(currentPath + dev_folder))
+            print("Dev data set loaded")
+            jsonSet.sync()
+            
 
         else: 
             print("Data already exists in the shelve")
 
         buildIndex(jsonSet["AnalystJson"])
+        jsonSet.sync()
+        buildIndex(jsonSet["DevJson"])
+        jsonSet.sync()
 
 
     
