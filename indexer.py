@@ -6,10 +6,11 @@ from collections import defaultdict, Counter
 from bs4 import BeautifulSoup
 import pickle
 from Posting import Posting
+import sys
 
 totalFiles = 100
 
-def readJsonFiles(folderPath):
+def readJsonFiles(folderPath, outputFile, dirName : str):
 
     jsonSet = set()
     for root, dirs, files in os.walk(folderPath):
@@ -29,11 +30,20 @@ def readJsonFiles(folderPath):
 
         print(f"Finished reading {root}")
 
+        # Write each dir into disk
+        # You should do this
+        if dirName not in outputFile or outputFile[dirName] is None:
+            outputFile[dirName] = jsonSet
+        else:
+            outputFile[dirName].update(jsonSet)
+        
+        outputFile.sync()
+
+
         # Recurse through the directories to get all jsons
         for dir in dirs:
-            jsonSet.union(readJsonFiles(os.path.join(root, dir)))
-
-    return jsonSet
+            readJsonFiles(os.path.join(root, dir), outputFile, dirName)
+            outputFile.sync()
 
 def parseDocumentIntoTokens(jsonFile):
 
@@ -99,7 +109,7 @@ def buildIndex(jsonSet):
     # Record the number of indexed documents, number of skipped documents, unique tokens, top tokens, and the total size of the index
     # (Might be worth moving this outside of this function)
     with shelve.open("indexedDocuments.shelve") as indexedDocuments:
-        indexedDocuments["indexedDocumesnts"] = index
+        indexedDocuments["indexedDocuments"] = index
         indexedDocuments.sync()
     with shelve.open("skippedDocuments.shelve") as skippedDocuments:
         skippedDocuments["skippedDocuments"] = documentsSkipped
@@ -125,25 +135,39 @@ if __name__ == "__main__":
     nltk.download('wordnet')
     lemmatizer = nltk.stem.WordNetLemmatizer()
 
+    if len(sys.argv) > 1:
+        with shelve.open("jsonSet.shelve") as jsonSet:
+            jsonSet.clear()
+        with shelve.open("indexTable.shelve") as indexTable:
+            indexTable.clear()
+        # SortAndWriteToDisk(indexHashTable, name)
+        os.remove("indexHashTable.pickle")
+        
+        with shelve.open("indexedDocuments.shelve") as indexedDocuments:
+            indexedDocuments.clear()
+        with shelve.open("skippedDocuments.shelve") as skippedDocuments:
+            skippedDocuments.clear()
+        with shelve.open("uniqueTokens.shelve") as uniqueTokens:
+            uniqueTokens.clear()
+        with shelve.open("topTokens.shelve") as topTokens:
+            topTokens.clear()
+        with shelve.open("totalSize.shelve") as totalSize:
+            totalSize.clear()
+        
 
     with shelve.open("jsonSet.shelve") as jsonSet:
 
-        if len(jsonSet) == 0:
-            jsonSet["AnalystJson"] = (readJsonFiles(currentPath + analyst_folder))
-            jsonSet.sync()
-            print("Analyst data set loaded")
-            jsonSet["DevJson"] = (readJsonFiles(currentPath + dev_folder))
-            print("Dev data set loaded")
-            jsonSet.sync()
-            
+        readJsonFiles(currentPath + analyst_folder, jsonSet, "AnalystJson")
+        print("Analyst data set loaded")
 
-        else: 
-            print("Data already exists in the shelve")
+        print(jsonSet["AnalystJson"])
+        #readJsonFiles(currentPath + dev_folder, jsonSet, "DevJson")
+        #print("Dev data set loaded")
 
         buildIndex(jsonSet["AnalystJson"])
         jsonSet.sync()
-        buildIndex(jsonSet["DevJson"])
-        jsonSet.sync()
+        #buildIndex(jsonSet["DevJson"])
+        #jsonSet.sync()
 
 
     
