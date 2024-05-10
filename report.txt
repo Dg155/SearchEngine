@@ -1,64 +1,65 @@
+----- Daniel Boghossian (27489674), Owen Koch (86884141)-----
 ----- Indexed Documents -----
 1946
 ------------------
 ----- Unique Tokens -----
-24627
+23085
 ------------------
 ----- Total Size -----
-19381.38 KB
+3709.24 KB
 ------------------
 ----- Skipped Documents -----
 42
 ------------------
 ----- Top Tokens -----
-Research 1946
-the 1942
-to 1937
-Science 1934
-Faculty 1931
-Computer 1931
-Students 1931
-Series 1929
-UC 1929
-Areas 1928
-News 1928
-Feedback 1928
-Explore 1927
-Contact 1927
-Centers 1927
-Graduate 1927
-Degrees 1927
-Undergraduate 1927
-Seminar 1927
-Admissions 1927
-2019 1927
-Regents 1927
-Privacy 1927
-Policy 1927
-of 1915
-for 1858
-and 1851
-Impact 1836
-in 1778
-from 1774
-that 1773
-University 1659
-Irvine 1631
-at 1621
-Information 1592
-California 1579
-Ph.D. 1575
-We 1571
-on 1570
-Engineering 1567
-October 1561
-Department 1551
-September 1536
-Read 1533
-Search 1528
-Map 1527
-Software 1520
-Student 1494
-Schedule 1493
-Past 1491
+to 94
+the 94
+Research 94
+Contact 93
+News 93
+Explore 93
+Faculty 93
+Seminar 93
+Series 93
+Graduate 93
+Degrees 93
+Undergraduate 93
+Computer 93
+Science 93
+Admissions 93
+Centers 93
+Areas 93
+Students 93
+UC 93
+2019 93
+Feedback 93
+Privacy 93
+Policy 93
+Regents 93
+of 92
+and 92
+for 89
+in 88
+from 86
+Impact 86
+that 85
+University 80
+Irvine 80
+at 77
+October 77
+California 76
+We 75
+September 74
+on 73
+Map 72
+Information 72
+Search 71
+The 71
+is 71
+Department 70
+Engineering 69
+Ph.D. 69
+Software 69
+Schedule 69
+with 69
 ------------------
