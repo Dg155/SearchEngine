@@ -76,7 +76,7 @@ def buildIndex(jsonSet):
         tokens = parseDocumentIntoTokens(jsonFile)
         # It says remove duplicates but we dont have to because we are counting frequency?
 
-        if len(tokens) != 0:
+        if len(tokens.items()) != 0:
             for token, count in tokens.items():
                 indexHashTable[token].append(Posting(index, count, jsonFile["url"]))
                 #print("Indexed document ", jsonFile["url"])
@@ -129,9 +129,9 @@ if __name__ == "__main__":
     with shelve.open("jsonSet.shelve") as jsonSet:
 
         if len(jsonSet) == 0:
-            jsonSet["AnalystJson"] = (readJsonFiles(currentPath + analyst_folder))
-            jsonSet.sync()
-            print("Analyst data set loaded")
+            #jsonSet["AnalystJson"] = (readJsonFiles(currentPath + analyst_folder))
+            #jsonSet.sync()
+            #rint("Analyst data set loaded")
             jsonSet["DevJson"] = (readJsonFiles(currentPath + dev_folder))
             print("Dev data set loaded")
             jsonSet.sync()
@@ -140,8 +140,8 @@ if __name__ == "__main__":
         else: 
             print("Data already exists in the shelve")
 
-        buildIndex(jsonSet["AnalystJson"])
-        jsonSet.sync()
+        #buildIndex(jsonSet["AnalystJson"])
+        #jsonSet.sync()
         buildIndex(jsonSet["DevJson"])
         jsonSet.sync()
 
