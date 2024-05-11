@@ -16,19 +16,19 @@ def generate_report(title, stats, file):
 if __name__ == "__main__":
     with open("report.txt", "w") as f:
 
-        with shelve.open("indexedDocuments") as indexedDocuments:
-            generate_report("Indexed Documents", indexedDocuments["indexedDocuments"], f)
+        with shelve.open("indexedDocuments.shelve") as indexedDocuments:
+            generate_report("Indexed Documents", indexedDocuments["indexedDocumesnts"], f)
 
-        with shelve.open("uniqueTokens") as uniqueTokens:
+        with shelve.open("uniqueTokens.shelve") as uniqueTokens:
             generate_report("Unique Tokens", uniqueTokens["uniqueTokens"], f)
 
-        with shelve.open("totalSize") as totalSize:
+        with shelve.open("totalSize.shelve") as totalSize:
             generate_report("Total Size", totalSize["kilobytes"], f)
 
-        with shelve.open("skippedDocuments") as skippedDocuments:
+        with shelve.open("skippedDocuments.shelve") as skippedDocuments:
             generate_report("Skipped Documents", skippedDocuments["skippedDocuments"], f)
 
-        with shelve.open("topTokens") as topTokens:
+        with shelve.open("topTokens.shelve") as topTokens:
             generate_report("Top Tokens", topTokens["topTokens"], f)
     
         
