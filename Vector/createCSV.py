@@ -10,12 +10,12 @@ def CreateCSV():
 
     sentence_embedding = AutoPipes.pipeline('sentence_embedding')
 
-    with open('fileInfo.csv', 'w', newline='', encoding= 'utf-8') as file:
+    with open('fileInfoDEV.csv', 'w', newline='', encoding= 'utf-8') as file:
         writer = csv.writer(file)
         field = ["id", "title", "link", "content_vector"]
         writer.writerow(field)
         
-        fileList = GatherFiles(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\ANALYST")
+        fileList = GatherFiles(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\DEV")
 
         index = 0
         for file in fileList:

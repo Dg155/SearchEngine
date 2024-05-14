@@ -16,25 +16,26 @@ if __name__ == "__main__":
     )
     sentence_embedding = AutoPipes.pipeline('sentence_embedding')
 
-    print("Please input your query")
-    query = input()
+    while(1):
+        print("Please input your query")
+        query = input()
 
-    print("Please input the amount of results you would like")
-    count = int(input())
+        print("Please input the amount of results you would like")
+        count = int(input())
 
-    query_vectors = [np.array(sentence_embedding(query).to_list()[0][0], dtype= 'float32')]
+        query_vectors = [np.array(sentence_embedding(query).to_list()[0][0], dtype= 'float32')]
 
-    res = client.search(
-    collection_name=collection_name,     # target collection
-    data=query_vectors,                # query vectors
-    limit=count,                           # number of returned entities
-    output_fields=['title', 'link']
-    )
+        res = client.search(
+        collection_name=collection_name,     # target collection
+        data=query_vectors,                # query vectors
+        limit=count,                           # number of returned entities
+        output_fields=['title', 'link']
+        )
 
-    print(f"----------Top {count} results----------")
+        print(f"----------Top {count} results----------")
 
-    index = 0
-    for response in res[0]:
-        print(f"Response # {index} is {response['entity']['title']} at {response['entity']['link']}")
-        print("-------------------------------------")    
-        index += 1
+        index = 0
+        for response in res[0]:
+            print(f"Response # {index} is {response['entity']['title']} at {response['entity']['link']}")
+            print("-------------------------------------")    
+            index += 1
