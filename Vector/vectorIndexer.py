@@ -1,68 +1,99 @@
-from pymilvus import connections, FieldSchema, CollectionSchema, DataType, Collection, utility
-from towhee import pipe, ops, DataCollection
+from pymilvus import DataType, MilvusClient
+from towhee import AutoPipes, pipe, ops, DataCollection
 import sys
 import os
 import pandas as pd
+import numpy as np
 
-connections.connect(host='127.0.0.1', port='19530')
+collection_name = "Test"
 
-search_pipe = (pipe.input('query')
-                    .map('query', 'vec', ops.text_embedding.dpr(model_name="facebook/dpr-ctx_encoder-single-nq-base"))
-                    .map('vec', 'vec', lambda x: x / np.linalg.norm(x, axis=0))
-                    .flat_map('vec', ('id', 'score'), ops.ann_search.milvus_client(host='127.0.0.1', 
-                                                                                   port='19530',
-                                                                                   collection_name='search_article_in_medium'))  
-                    .output('query', 'id', 'score')
-               )
+client = MilvusClient(
+uri="http://localhost:19530"
+)
 
-
-insert_pipe = (pipe.input('df')
-                    .flat_map('df', 'data', lambda df: df.values.tolist())
-                    .map('data', 'res', ops.ann_insert.milvus_client(host='127.0.0.1', 
-                                                                        port='19530',
-                                                                        collection_name='search_article_in_medium'))
-                    .output('res')
+def create_milvus_collection(dim):
+    
+    schema = MilvusClient.create_schema(
+        auto_id=False,
+        enable_dynamic_field=True,
     )
 
-def create_milvus_collection(collection_name, dim):
-    if utility.has_collection(collection_name):
-        utility.drop_collection(collection_name)
-    
-    fields = [
-            FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=False),
-            FieldSchema(name="title", dtype=DataType.VARCHAR, max_length=500),   
-            FieldSchema(name="title_vector", dtype=DataType.FLOAT_VECTOR, dim=dim),
-            FieldSchema(name="link", dtype=DataType.VARCHAR, max_length=500),
-            FieldSchema(name="content_vector", dtype=DataType.FLOAT_VECTOR, dim=dim),
-            
-    ]
-    schema = CollectionSchema(fields=fields, description='search text')
-    collection = Collection(name=collection_name, schema=schema)
-    
-    index_params = {
-        'metric_type': "L2",
-        'index_type': "IVF_FLAT",
-        'params': {"nlist": 2048}
-    }
-    collection.create_index(field_name='title_vector', index_params=index_params)
-    return collection
+    #field = ["id", "title", "title_vector", "link", "content", "content_vector"]
+    schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+    schema.add_field(field_name="title", datatype=DataType.VARCHAR, max_length=500)
+    #schema.add_field(field_name="title_vector", datatype=DataType.FLOAT_VECTOR, dim=dim)
+    schema.add_field(field_name="link", datatype=DataType.VARCHAR, max_length=500)
+    #schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=500)
+    schema.add_field(field_name="content_vector", datatype=DataType.FLOAT_VECTOR, dim=dim)
 
-def insertData(Filepath):
 
-   
+    index_params = client.prepare_index_params()
 
-    df = pd.read_csv(Filepath, "r") 
-    insert_pipe(df)
+    index_params.add_index(
+        field_name="id"
+    )
 
-    
+    #index_params.add_index(
+    #    field_name="title_vector", 
+    #    index_type="AUTOINDEX",
+    #    metric_type="IP"
+    #)
+
+    index_params.add_index(
+        field_name="content_vector", 
+        index_type="AUTOINDEX",
+        metric_type="IP"
+    )
+
+    client.create_collection(
+        collection_name=collection_name,
+        schema=schema,
+        index_params=index_params
+    )
+
 
 
 
 if __name__ == "__main__":
-    collection = create_milvus_collection('121Analyst', 768)
 
-    collection.load()
-    print(collection.num_entities)
 
-    res = search_pipe('funny python demo')
-    DataCollection(res).show()
+    client.drop_collection(
+    collection_name=collection_name
+    )
+
+    create_milvus_collection(384)
+
+    # Define the column names and data types according to your schema
+    column_names = ['id', 'title', 'link', 'content_vector']
+    column_types = {'id': 'int64', 'title': 'str', 'link': 'str', 'content_vector': 'object'}
+
+    # Read the CSV file, skipping the first row, and apply conversion function to relevant columns
+    df = pd.read_csv(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\Vector\fileInfo.csv", skiprows=[0], names=column_names, dtype=column_types)
+
+    def strip_vector(stringVector):
+        return np.array([float(x.rstrip('\n')) for x in stringVector.strip('[]').split(' ') if x != ''], dtype= 'float32')
+    df['content_vector'] = df['content_vector'].apply(strip_vector)
+    # insert into the vector database
+    res = client.insert(
+    collection_name=collection_name,
+    data= df.to_dict(orient='records')
+    )
+
+    
+
+    sentence_embedding = AutoPipes.pipeline('sentence_embedding')
+    query_vectors = [np.array(sentence_embedding("Owen").to_list()[0][0], dtype= 'float32')]
+
+    print(query_vectors)
+
+    res = client.search(
+    collection_name=collection_name,     # target collection
+    data=query_vectors,                # query vectors
+    limit=3,                           # number of returned entities
+    output_fields=['title']
+    )
+
+    print(res)
+
+    #res = search_pipe('funny python demo')
+    #DataCollection(res).show()
