@@ -1,10 +1,6 @@
-from pymilvus import DataType, MilvusClient
-from towhee import AutoPipes, pipe, ops, DataCollection
-import sys
-import os
-import pandas as pd
+from pymilvus import MilvusClient
+from towhee import AutoPipes
 import numpy as np
-from pymilvus import connections
 
 
 collection_name = "Analyst"
