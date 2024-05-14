@@ -4,25 +4,18 @@ import csv
 import os
 import json
 from bs4 import BeautifulSoup
-from transformers import AutoTokenizer, AutoModel
 from towhee import AutoPipes, AutoConfig
 
 def CreateCSV():
 
-    
-    config = AutoConfig.load_config('sentence_embedding')
-    config.model = 'sentence-t5-xxl'
+    sentence_embedding = AutoPipes.pipeline('sentence_embedding')
 
-    vectorPipe = AutoPipes.pipeline('sentence_embedding', config=config)
-
-
-
-    with open('fileInfo.csv', 'w', newline='') as file:
+    with open('fileInfo.csv', 'w', newline='', encoding= 'utf-8') as file:
         writer = csv.writer(file)
-        field = ["id", "title", "title_vector", "link", "content", "content_vector"]
+        field = ["id", "title", "link", "content_vector"]
         writer.writerow(field)
         
-        fileList = GatherFiles("/content/drive/MyDrive/121Data/ANALYST")
+        fileList = GatherFiles(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\ANALYST")
 
         index = 0
         for file in fileList:
@@ -31,11 +24,13 @@ def CreateCSV():
             fileInfo = ReadJSONFile(file)
             title, link, content = fileInfo
 
-            # Create the vectors
-            title_vector =  DataCollection(vectorPipe(title).get()).to_list()
-            content_vector = DataCollection(vectorPipe(content).get()).to_list()
-            
-            writer.writerow([index, title, title_vector, link, content, content_vector])
+            # Check for fields
+            if(title == ""):
+               title = "No title found"
+            else:
+                title = title.strip()
+            content_vector =  sentence_embedding(content).to_list()[0][0]
+            writer.writerow([index, title, link, content_vector])
             index += 1
 
 
@@ -43,7 +38,7 @@ def ReadJSONFile(filePath):
     with open(filePath, "r") as f:
         jsonData = json.load(f)
         soup = BeautifulSoup(jsonData["content"], "html.parser", from_encoding=jsonData["encoding"])
-        title = soup.find('title').get_text() if soup.find('title') else None
+        title = soup.find('title').get_text() if soup.find('title') else ""
         return title, jsonData["url"], soup.get_text()
 
 def GatherFiles(folderPath):
