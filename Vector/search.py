@@ -1,8 +1,5 @@
-from pymilvus import DataType, MilvusClient
-from towhee import AutoPipes, pipe, ops, DataCollection
-import sys
-import os
-import pandas as pd
+from pymilvus import MilvusClient
+from towhee import AutoPipes
 import numpy as np
 import  time
 
@@ -11,7 +8,6 @@ collection_name = "DEV"
 
 
 if __name__ == "__main__":  
-
     client = MilvusClient(
     uri="https://in03-2893550dac2ce6c.api.gcp-us-west1.zillizcloud.com",
     token="69982138f98274926e691ee7f5c44a775f816ce0065d51fbb3fa95fbdb6be466c9f2d3c603354518c8cafcce30af0b3948049dcc"
@@ -48,3 +44,4 @@ if __name__ == "__main__":
             print(f"Response # {index} is {response['entity']['title']} at {response['entity']['link']}")
             print("-------------------------------------")    
             index += 1
+
