@@ -3,7 +3,7 @@ from towhee import AutoPipes
 import numpy as np
 
 
-collection_name = "Analyst"
+collection_name = "DEV"
 
 if __name__ == "__main__":  
     client = MilvusClient(
