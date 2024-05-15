@@ -1,3 +1,4 @@
+import math
 from pymilvus import DataType, MilvusClient
 from towhee import AutoPipes, pipe, ops, DataCollection
 import sys
@@ -58,9 +59,7 @@ def create_milvus_collection(dim):
 if __name__ == "__main__":
 
 
-    client.drop_collection(
-    collection_name=collection_name
-    )
+    client.drop_collection(collection_name=collection_name)
 
     create_milvus_collection(384)
 
@@ -69,16 +68,37 @@ if __name__ == "__main__":
     column_types = {'id': 'int64', 'title': 'str', 'link': 'str', 'content_vector': 'object'}
 
     # Read the CSV file, skipping the first row, and apply conversion function to relevant columns
-    df = pd.read_csv(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\Vector\fileInfoANALYST.csv", skiprows=[0], names=column_names, dtype=column_types)
+    df = pd.read_csv(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\Vector\fileInfoDEV.csv", skiprows=[0], names=column_names, dtype=column_types)
 
     def strip_vector(stringVector):
         return np.array([float(x.rstrip('\n')) for x in stringVector.strip('[]').split(' ') if x != ''], dtype= 'float32')
+    
+    def convert_string(string):
+        string = str(string)
+        return string[:400] + '...' if len(string) >= 500 else string
+    
     df['content_vector'] = df['content_vector'].apply(strip_vector)
-    # insert into the vector database
-    res = client.insert(
-    collection_name=collection_name,
-    data= df.to_dict(orient='records')
-    )
+    df['link'] = df['link'].apply(convert_string)
+    df['title'] = df['title'].apply(convert_string)
+   
+    dict_version = df.to_dict(orient='records')
+
+    chunk_size = 1000  
+
+    # Calculate the total number of chunks
+    total_chunks = math.ceil(len(dict_version) / chunk_size)
+
+    for chunk_index in range(total_chunks):
+        start_index = chunk_index * chunk_size
+        end_index = min((chunk_index + 1) * chunk_size, len(dict_version))
+        chunk_data = dict_version[start_index:end_index]
+
+        
+        # insert into the vector database
+        res = client.insert(
+        collection_name=collection_name,
+        data= chunk_data
+        )
 
     
     print("hosting")
