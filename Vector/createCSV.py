@@ -7,7 +7,6 @@ from bs4 import BeautifulSoup
 from towhee import AutoPipes, AutoConfig
 
 def CreateCSV():
-
     sentence_embedding = AutoPipes.pipeline('sentence_embedding')
 
     with open('fileInfoDEV.csv', 'w', newline='', encoding= 'utf-8') as file:

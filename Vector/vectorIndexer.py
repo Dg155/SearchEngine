@@ -5,10 +5,11 @@ import os
 import pandas as pd
 import numpy as np
 
-collection_name = "Test"
+collection_name = "DEV"
 
 client = MilvusClient(
-uri="http://localhost:19530"
+uri="https://in03-2893550dac2ce6c.api.gcp-us-west1.zillizcloud.com",
+token="69982138f98274926e691ee7f5c44a775f816ce0065d51fbb3fa95fbdb6be466c9f2d3c603354518c8cafcce30af0b3948049dcc"
 )
 
 def create_milvus_collection(dim):
@@ -68,7 +69,7 @@ if __name__ == "__main__":
     column_types = {'id': 'int64', 'title': 'str', 'link': 'str', 'content_vector': 'object'}
 
     # Read the CSV file, skipping the first row, and apply conversion function to relevant columns
-    df = pd.read_csv(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\Vector\fileInfo.csv", skiprows=[0], names=column_names, dtype=column_types)
+    df = pd.read_csv(r"C:\Users\kidro\OneDrive\Desktop\School\SearchEngine\Vector\fileInfoANALYST.csv", skiprows=[0], names=column_names, dtype=column_types)
 
     def strip_vector(stringVector):
         return np.array([float(x.rstrip('\n')) for x in stringVector.strip('[]').split(' ') if x != ''], dtype= 'float32')
@@ -80,7 +81,8 @@ if __name__ == "__main__":
     )
 
     
-
+    print("hosting")
+    exit()
     sentence_embedding = AutoPipes.pipeline('sentence_embedding')
     query_vectors = [np.array(sentence_embedding("Owen").to_list()[0][0], dtype= 'float32')]
 
