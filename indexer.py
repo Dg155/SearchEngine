@@ -2,44 +2,63 @@ import os
 import json
 import nltk
 import shelve
-from collections import defaultdict, Counter
+from collections import Counter
 from bs4 import BeautifulSoup
-import pickle
 from Posting import Posting
+import psutil
+import re
+from nltk.stem import PorterStemmer
+
+
 
 simHashQueueLength = 100
-simHashThreshold = 0.65
-batchSize = 1000
-exploredRoots = set()
+simHashThreshold = 0.85
+batchSize = 15000
+readingMemoryLimit = 1000
+indexingMemoryLimit = 500
+ps = PorterStemmer()
+
+def intOrFloat(s):
+    pattern = r'^[+-]?(\d+(\.\d*)?|\.\d+)$'
+    return bool(re.fullmatch(pattern, s))
 
 def readandIndexJsonFiles(folderPath):
 
+    invertedIndexID = 0
+    documentsSkipped = 0
+    uniqueWords = set()
     jsonSet = set()
+
     for root, dirs, files in os.walk(folderPath):
 
         for file in files:
             # Only read json files
             if file.endswith(".json"):
                 filePath = os.path.join(root, file)
-                with open(filePath, "r") as f:
+                jsonSet.add(filePath)
 
-                    jsonData = json.load(f)
-                    jsonSet.add(json.dumps(jsonData))
+                memory = psutil.virtual_memory() # Check memory usage
 
-                    # Uncomment in case we want to limit our data set for time
-                    # if len(jsonSet) == totalFiles:
-                    #     return jsonSet
+                if memory.available / (1024 ** 2) < readingMemoryLimit:
+                    print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {len(jsonSet)} documents")
+                    invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
+                    jsonSet.clear()
+
+                if len(jsonSet) > batchSize:
+                    print(f"Batch size reached, indexing {batchSize} documents")
+                    invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
+                    jsonSet.clear()
+    
+    if len(jsonSet) > 0:
+        print(f"Indexing remaining {len(jsonSet)} documents")
+        invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
+        jsonSet.clear()
 
         print(f"Finished reading {root}")
     
-    with shelve.open("jsonSet.shelve") as jsonSetShelve:
-        jsonSetShelve["jsonSet"] = jsonSet
-        print("Json set saved to shelve")
-        jsonSetShelve.sync()
-        
-    buildIndex(list(jsonSet))
+    print(f"Total documents indexed: {invertedIndexID}. Total documents skipped: {documentsSkipped}. Total unique tokens: {len(uniqueWords)}")
 
-    return jsonSet
+    return invertedIndexID, documentsSkipped, uniqueWords
 
 def parseDocumentIntoTokens(jsonFile):
 
@@ -51,81 +70,92 @@ def parseDocumentIntoTokens(jsonFile):
     if soup:
         try: # Try Catch for getting the text from the soup
 
+            title = soup.find('title').text if soup.find('title') else None
             totalText = soup.get_text()
+
+            if not checkDuplicate(soup):
+                return "", Counter()
 
             if len(totalText) != 0:
                 tokens = [string for string in nltk.word_tokenize(totalText) if len(string) > 1] # Remove single character tokens like 's' and ','
-                tokens = [lemmatizer.lemmatize(token) for token in tokens]
-                return Counter(tokens) # Transform into a dictionary of token strings and their frequency
+                tokens = [ps.stem(token) for token in tokens if not intOrFloat(token)]
+                return title, Counter(tokens) # Transform into a dictionary of token strings and their frequency
             
         except Exception as e:
             print(e)
-            return Counter()
+            return "", Counter()
         
-    return Counter()
+    return "", Counter()
         
 
-def buildIndex(jsonSet):
-    # Function from lecture notes
+def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords):
 
-    indexHashTable = defaultdict(list)
-    index = 0
-    documentsSkipped = 0
-    uniqueWords = set()
+    indexedHashtable = dict()
+    mapOfUrls = dict()
 
-    for jsonFile in jsonSet:
+    for filePath in jsonSet:
 
-        jsonFile = json.loads(jsonFile)
-        index += 1
-        tokens = parseDocumentIntoTokens(jsonFile)
-        # It says remove duplicates but we dont have to because we are counting frequency?
+        with open(filePath, "r") as f:
 
-        if len(tokens.items()) != 0:
-            for token, count in tokens.items():
-                indexHashTable[token].append(Posting(index, count, jsonFile["url"]))
-                #print("Indexed document ", jsonFile["url"])
-        else:
-            batchList = documentList
-            documentList = []
-        
-        for jsonFile in batchList:
-
-            jsonFile = json.loads(jsonFile)
-            index += 1
-            tokens = parseDocumentIntoTokens(jsonFile)
-            # It says remove duplicates but we dont have to because we are counting frequency?
+            jsonData = json.load(f)
+            title, tokens = parseDocumentIntoTokens(jsonData)
 
             if len(tokens) != 0:
-                for token, count in tokens.items():
-                    uniqueWords.add(token)
-                    indexHashTable[token].append(Posting(index, count, jsonFile["url"]))
-                    #print("Indexed document ", jsonFile["url"])
-            else:
-                print("No tokens found in document ", jsonFile["url"])
-                documentsSkipped += 1
-                index -= 1
-    
-        # SortAndWriteToDisk(indexHashTable, name)
-        with open("indexHashTable.pickle", "ab") as name:
-            pickle.dump(indexHashTable, name)
-            indexHashTable.clear()
-            print(f"Batch size {len(batchList)} indexed")
 
+                invertedIndexID += 1
+
+                for token, count in tokens.items():
+                    # Add to unique words data
+                    uniqueWords.add(token)
+                    # Add posting to inverted index
+                    if token not in indexedHashtable:
+                        indexedHashtable[token] = [Posting(invertedIndexID, count)]
+                    else:
+                        indexedHashtable[token].append(Posting(invertedIndexID, count))
+                
+                # Add to urlMap
+                title = title if title else "Title Not Found"
+                mapOfUrls[str(invertedIndexID)] = [title, jsonData["url"]]
+                #print("Indexed document ", title)
+
+                # Memory Checking
+                memory = psutil.virtual_memory() # Check memory usage
+                if memory.available / (1024 ** 2) < indexingMemoryLimit: # Ensure we respect memory limits so we dont error
+                    print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {invertedIndexID} documents")
+                    with shelve.open("DevInvertedIndex.shelve") as invertedIndex:
+
+                        for key, value in indexedHashtable.items():
+                            if key in invertedIndex:
+                                invertedIndex[key] += value
+                            else:
+                                invertedIndex[key] = value
+
+                        indexedHashtable.clear()
+
+                        invertedIndex.sync()
+
+            else:
+                #print("No tokens found in document ", jsonData["url"])
+                documentsSkipped += 1
     
-    # Record the number of indexed documents, number of skipped documents, unique tokens, top tokens, and the total size of the index
-    # (Might be worth moving this outside of this function)
-    with shelve.open("indexedDocuments.shelve") as indexedDocuments:
-        indexedDocuments["indexedDocumesnts"] = index
-        indexedDocuments.sync()
-    with shelve.open("skippedDocuments.shelve") as skippedDocuments:
-        skippedDocuments["skippedDocuments"] = documentsSkipped
-        skippedDocuments.sync()
-    with shelve.open("uniqueTokens.shelve") as uniqueTokens:
-        uniqueTokens["uniqueTokens"] = uniqueWords
-        uniqueTokens.sync()
-    with shelve.open("totalSize.shelve") as totalSize:
-        totalSize["kilobytes"] = "{:.2f} KB".format(os.path.getsize('indexHashTable.pickle') / 1024)
-        totalSize.sync()
+    print(f"Indexed {len(jsonSet)} documents. Writing to disk.")
+
+    with shelve.open("DevInvertedIndex.shelve") as invertedIndex:
+
+        for key, value in indexedHashtable.items():
+            if key in invertedIndex:
+                invertedIndex[key] += value
+            else:
+                invertedIndex[key] = value
+
+        invertedIndex.sync()
+
+    with shelve.open("DevUrlMap.shelve") as urlMap:
+        urlMap.update(mapOfUrls)
+        urlMap.sync()
+
+    return invertedIndexID, documentsSkipped, uniqueWords
+
 
 
 def checkDuplicate(soup):
@@ -137,13 +167,17 @@ def checkDuplicate(soup):
     with shelve.open("hashOfPages.shelve") as hashOfPages:
         # need to be str so the key lookup works
         if str(crcHash) in hashOfPages:
-            #crawler.logger.warning(f"hash: {crcHash}  for url {resp.url} already visited")
+            #print("Duplicate page found")
             return False
         else:
             hashOfPages[str(crcHash)] = True
 
     # Check for near duplicates with simhashes
     with shelve.open("simHashSetLock.shelve") as simHashSetLock:
+
+        if "Queue" not in simHashSetLock:
+            simHashSetLock["Queue"] = []
+
         sim_hash = simHash(totalText)
 
         # Maintain a reasonable queue of links to compare to
@@ -153,7 +187,7 @@ def checkDuplicate(soup):
         
         for sim in simHashSetLock["Queue"]:
             if areSimilarSimHashes(sim_hash, sim, simHashThreshold):
-                #crawler.logger.warning(f"high similarity on {resp.url}")
+                #print("Near duplicate page found")
                 return False
 
         # Set the existance of the hash in the shelve
@@ -181,7 +215,7 @@ def cyclic_redundancy_check(pageData):
 
 def simHash(pageData):
     # Seperate into words with weights
-    weightedWords = Counter([lemmatizer.lemmatize(string) for string in nltk.word_tokenize(pageData) if len(string) > 1])
+    weightedWords = Counter([ps.stem(string) for string in nltk.word_tokenize(pageData) if len(string) > 1])
 
     # Get 8-bit hash values for every unique word
     hashValues = {word: bit_hash(word) for word in weightedWords}
@@ -235,23 +269,35 @@ if __name__ == "__main__":
     currentPath = os.getcwd()
     analyst_folder = "\ANALYST"
     dev_folder = "\DEV"
+    
+    # lemmatizer = nltk.stem.WordNetLemmatizer()
 
-    nltk.download('punkt')
-    nltk.download('wordnet')
-    lemmatizer = nltk.stem.WordNetLemmatizer()
+    # invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
+    # print("Analyst data set loaded and indexed")
 
+    # with shelve.open("analystInfo.shelve") as analystInfo:
 
-    #readandIndexJsonFiles(currentPath + analyst_folder)
-    #print("Analyst data set loaded and indexed")
-    with shelve.open("jsonSet.shelve") as jsonSetShelve:
-        if len(jsonSetShelve) != 0:
-            print("Loading dev data set from shelve")
-            jsonSet = jsonSetShelve["jsonSet"]
-            buildIndex(jsonSet)
-            print("Dev data set loaded and indexed")
-        else:
-            readandIndexJsonFiles(currentPath + dev_folder)
-            print("Dev data set loaded and indexed")
+    #     if len(analystInfo) == 0:
+    #         invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
+    #         print("Analyst data set loaded and indexed")
+            
+    #         analystInfo["indexedDocumesnts"] = invertedIndexID
+    #         analystInfo["skippedDocuments"] = documentsSkipped
+    #         analystInfo["uniqueTokens"] = len(uniqueWords)
+    #         analystInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('analystInvertedIndex.shelve.bak') / 1024)
+    #         analystInfo.sync()
+
+    with shelve.open("devInfo.shelve") as devInfo:
+
+        if len(devInfo) == 0:
+            invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + dev_folder)
+            print("Analyst data set loaded and indexed")
+            
+            devInfo["indexedDocumesnts"] = invertedIndexID
+            devInfo["skippedDocuments"] = documentsSkipped
+            devInfo["uniqueTokens"] = len(uniqueWords)
+            devInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('analystInvertedIndex.shelve.bak') / 1024)
+            devInfo.sync()
 
 
     
