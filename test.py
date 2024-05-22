@@ -1,9 +1,22 @@
-from nltk.stem import PorterStemmer
-import re
-ps = PorterStemmer()
+from transformers import pipeline
 
-def is_int_or_float(s):
-    pattern = r'^[+-]?(\d+(\.\d*)?|\.\d+)$'
-    return bool(re.fullmatch(pattern, s))
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
 
-print([is_int_or_float(token) for token in ["1.619", "-0.4636", "sharker", "0.04671", "-0.09881"]])
+def summarize_text(content):
+    try:
+        if len(content) < 30:
+            return content
+        
+        summary = summarizer(content, max_length=150, min_length=30, do_sample=False)
+        
+        if len(summary) == 0 or 'summary_text' not in summary[0]:
+            return "Failed to generate a summary."
+        
+        return summary[0]['summary_text']
+    except Exception as e:
+        print(f"Error summarizing content: {e}")
+        return "Error occurred while summarizing the content."
+
+# Example usage:
+content_to_summarize = "Your input text goes here."
+print(summarize_text(content_to_summarize))

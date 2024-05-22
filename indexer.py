@@ -1,15 +1,15 @@
 import os
 import json
-import nltk
-import shelve
-from collections import Counter
-from bs4 import BeautifulSoup
-from Posting import Posting
 import psutil
 import re
+import nltk
+import numpy as np
+from collections import Counter, defaultdict
+from bs4 import BeautifulSoup
 from nltk.stem import PorterStemmer
-
-
+from transformers import pipeline
+from Posting import Posting
+import pickle
 
 simHashQueueLength = 100
 simHashThreshold = 0.85
@@ -18,220 +18,220 @@ readingMemoryLimit = 1000
 indexingMemoryLimit = 500
 ps = PorterStemmer()
 
+summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
+FOLDERNAME = "ANALYST"
+
 def intOrFloat(s):
     pattern = r'^[+-]?(\d+(\.\d*)?|\.\d+)$'
     return bool(re.fullmatch(pattern, s))
 
-def readandIndexJsonFiles(folderPath):
+def summarize_text(content):
+    try:
+        summary = summarizer(content, max_length=150, min_length=30, do_sample=False)
+        return summary[0]['summary_text']
+    except Exception as e:
+        print(f"Error summarizing content: {e}")
+        return content[:150] + '...'
 
-    invertedIndexID = 0
-    documentsSkipped = 0
-    uniqueWords = set()
-    jsonSet = set()
+def read_and_index_json_files(folder_path):
+    inverted_index_id = 1
+    documents_skipped = 0
+    unique_words = set()
+    json_set = set()
+    corpus = []
+    doc_map = []
 
-    for root, dirs, files in os.walk(folderPath):
-
+    for root, dirs, files in os.walk(folder_path):
         for file in files:
-            # Only read json files
             if file.endswith(".json"):
-                filePath = os.path.join(root, file)
-                jsonSet.add(filePath)
-
-                memory = psutil.virtual_memory() # Check memory usage
+                file_path = os.path.join(root, file)
+                json_set.add(file_path)
+                memory = psutil.virtual_memory()
 
                 if memory.available / (1024 ** 2) < readingMemoryLimit:
-                    print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {len(jsonSet)} documents")
-                    invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
-                    jsonSet.clear()
+                    print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {len(json_set)} documents")
+                    inverted_index_id, documents_skipped, unique_words, corpus, doc_map = build_index(json_set, inverted_index_id, documents_skipped, unique_words, corpus, doc_map)
+                    json_set.clear()
 
-                if len(jsonSet) > batchSize:
+                if len(json_set) > batchSize:
                     print(f"Batch size reached, indexing {batchSize} documents")
-                    invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
-                    jsonSet.clear()
-    
-    if len(jsonSet) > 0:
-        print(f"Indexing remaining {len(jsonSet)} documents")
-        invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
-        jsonSet.clear()
+                    inverted_index_id, documents_skipped, unique_words, corpus, doc_map = build_index(json_set, inverted_index_id, documents_skipped, unique_words, corpus, doc_map)
+                    json_set.clear()
 
-        print(f"Finished reading {root}")
-    
-    print(f"Total documents indexed: {invertedIndexID}. Total documents skipped: {documentsSkipped}. Total unique tokens: {len(uniqueWords)}")
+    if len(json_set) > 0:
+        print(f"Indexing remaining {len(json_set)} documents")
+        inverted_index_id, documents_skipped, unique_words, corpus, doc_map = build_index(json_set, inverted_index_id, documents_skipped, unique_words, corpus, doc_map)
+        json_set.clear()
 
-    return invertedIndexID, documentsSkipped, uniqueWords
+    print(f"Total documents indexed: {inverted_index_id}. Total documents skipped: {documents_skipped}. Total unique tokens: {len(unique_words)}")
 
-def parseDocumentIntoTokens(jsonFile):
+    # Compute TF-IDF manually
+    doc_freq = defaultdict(int)
+    for doc_tokens in corpus:
+        unique_tokens = set(doc_tokens)
+        for token in unique_tokens:
+            doc_freq[token] += 1
 
-    content = jsonFile["content"]
-    
+    num_docs = len(corpus)
+    inverted_index = defaultdict(list)
+    for doc_id, doc_tokens in enumerate(corpus):
+        term_freq = Counter(doc_tokens)
+        for term, count in term_freq.items():
+            tf = count / len(doc_tokens)
+            idf = np.log(num_docs / (1 + doc_freq[term]))
+            tf_idf = tf * idf
+            inverted_index[term].append(Posting(doc_id, tf_idf))
+
+    # Write the inverted index to file
+    with open(os.join(os.getcwd() + f"{FOLDERNAME}_inverted_index.pkl"), "wb") as f:
+        pickle.dump(inverted_index, f)
+
+    return inverted_index_id, documents_skipped, unique_words
+
+def parse_document_into_tokens(json_file):
+    content = json_file["content"]
     soup = BeautifulSoup(content, "html.parser")
 
-    # BeautifulSoup shouuld be able to handle bad HTML, but just in case include some error handling
     if soup:
-        try: # Try Catch for getting the text from the soup
-
+        try:
             title = soup.find('title').text if soup.find('title') else None
-            totalText = soup.get_text()
+            total_text = soup.get_text()
 
-            if not checkDuplicate(soup):
-                return "", Counter()
+            if not check_duplicate(soup):
+                return "", Counter(), ""
 
-            if len(totalText) != 0:
-                tokens = [string for string in nltk.word_tokenize(totalText) if len(string) > 1] # Remove single character tokens like 's' and ','
+            if len(total_text) != 0:
+                summary = summarize_text(total_text)
+                tokens = [string for string in nltk.word_tokenize(total_text) if len(string) > 1]
                 tokens = [ps.stem(token) for token in tokens if not intOrFloat(token)]
-                return title, Counter(tokens) # Transform into a dictionary of token strings and their frequency
+                return title, tokens, summary
             
         except Exception as e:
             print(e)
-            return "", Counter()
+            return "", Counter(), ""
         
-    return "", Counter()
+    return "", Counter(), ""
         
 
-def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords):
+def build_index(json_set, inverted_index_id, documents_skipped, unique_words, corpus, doc_map):
 
-    indexedHashtable = dict()
-    mapOfUrls = dict()
+    indexed_hashtable = dict()
+    map_of_urls = dict()
 
-    for filePath in jsonSet:
+    for file_path in json_set:
 
-        with open(filePath, "r") as f:
+        with open(file_path, "r") as f:
 
-            jsonData = json.load(f)
-            title, tokens = parseDocumentIntoTokens(jsonData)
+            json_data = json.load(f)
+            title, tokens, summary = parse_document_into_tokens(json_data)
 
             if len(tokens) != 0:
-
-                invertedIndexID += 1
-
-                for token, count in tokens.items():
-                    # Add to unique words data
-                    uniqueWords.add(token)
-                    # Add posting to inverted index
-                    if token not in indexedHashtable:
-                        indexedHashtable[token] = [Posting(invertedIndexID, count)]
+                inverted_index_id += 1
+                print(f"Parsing doc {inverted_index_id}")
+                for token in tokens:
+                    unique_words.add(token)
+                    if token not in indexed_hashtable:
+                        indexed_hashtable[token] = [inverted_index_id]
                     else:
-                        indexedHashtable[token].append(Posting(invertedIndexID, count))
+                        indexed_hashtable[token].append(inverted_index_id)
                 
-                # Add to urlMap
-                title = title if title else "Title Not Found"
-                mapOfUrls[str(invertedIndexID)] = [title, jsonData["url"]]
-                #print("Indexed document ", title)
+                map_of_urls[str(inverted_index_id)] = [title if title else "Title Not Found", json_data["url"], summary]
+                corpus.append(tokens)
+                doc_map.append(file_path)
 
-                # Memory Checking
-                memory = psutil.virtual_memory() # Check memory usage
-                if memory.available / (1024 ** 2) < indexingMemoryLimit: # Ensure we respect memory limits so we dont error
-                    print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {invertedIndexID} documents")
-                    with shelve.open("DevInvertedIndex.shelve") as invertedIndex:
-
-                        for key, value in indexedHashtable.items():
-                            if key in invertedIndex:
-                                invertedIndex[key] += value
-                            else:
-                                invertedIndex[key] = value
-
-                        indexedHashtable.clear()
-
-                        invertedIndex.sync()
-
+                memory = psutil.virtual_memory()
+                if memory.available / (1024 ** 2) < indexingMemoryLimit:
+                    print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {inverted_index_id} documents")
+                    with open(f"partial_inverted_index_{inverted_index_id}.pkl", "wb") as partial_index_file:
+                        pickle.dump(indexed_hashtable, partial_index_file)
+                    indexed_hashtable.clear()
             else:
-                #print("No tokens found in document ", jsonData["url"])
-                documentsSkipped += 1
-    
-    print(f"Indexed {len(jsonSet)} documents. Writing to disk.")
+                documents_skipped += 1
+                print(f"Skipping {inverted_index_id}")
 
-    with shelve.open("DevInvertedIndex.shelve") as invertedIndex:
+    print(f"Indexed {len(json_set)} documents. Writing to disk.")
 
-        for key, value in indexedHashtable.items():
-            if key in invertedIndex:
-                invertedIndex[key] += value
-            else:
-                invertedIndex[key] = value
+    # Write the partial inverted index to file
+    with open(f"{FOLDERNAME}_partial_inverted_index_{inverted_index_id}.pkl", "wb") as partial_index_file:
+        pickle.dump(indexed_hashtable, partial_index_file)
 
-        invertedIndex.sync()
+    with open(f"{FOLDERNAME}_url_map.pkl", "wb") as url_map_file:
+        pickle.dump(map_of_urls, url_map_file)
 
-    with shelve.open("DevUrlMap.shelve") as urlMap:
-        urlMap.update(mapOfUrls)
-        urlMap.sync()
+    return inverted_index_id, documents_skipped, unique_words, corpus, doc_map
 
-    return invertedIndexID, documentsSkipped, uniqueWords
+def check_duplicate(soup):
+    total_text = soup.get_text()
+    crc_hash = cyclic_redundancy_check(total_text)
 
+    # Handling hashOfPages.pkl
+    hash_file_path = f"{FOLDERNAME}_hashOfPages.pkl"
+    if os.path.exists(hash_file_path):
+        with open(hash_file_path, "rb") as hash_of_pages_file:
+            hash_of_pages = pickle.load(hash_of_pages_file)
+    else:
+        hash_of_pages = {}
 
+    if str(crc_hash) in hash_of_pages:
+        return False
+    else:
+        hash_of_pages[str(crc_hash)] = True
+        with open(hash_file_path, "wb") as hash_of_pages_file:
+            pickle.dump(hash_of_pages, hash_of_pages_file)
 
-def checkDuplicate(soup):
-    # For exact duplicates, use CRC to hash the page and compare to all previously visited pages.
-    totalText = soup.get_text()
-    crcHash = cyclic_redundancy_check(totalText)
+    # Handling simHashSetLock.pkl
+    sim_hash_set_lock_file_path = f"{FOLDERNAME}_simHashSetLock.pkl"
+    if os.path.exists(sim_hash_set_lock_file_path):
+        with open(sim_hash_set_lock_file_path, "rb") as sim_hash_set_lock_file:
+            sim_hash_set_lock = pickle.load(sim_hash_set_lock_file)
+    else:
+        sim_hash_set_lock = {"Queue": []}
 
-    # Reserve dict for this thread
-    with shelve.open("hashOfPages.shelve") as hashOfPages:
-        # need to be str so the key lookup works
-        if str(crcHash) in hashOfPages:
-            #print("Duplicate page found")
-            return False
-        else:
-            hashOfPages[str(crcHash)] = True
+    if "Queue" not in sim_hash_set_lock:
+        sim_hash_set_lock["Queue"] = []
 
-    # Check for near duplicates with simhashes
-    with shelve.open("simHashSetLock.shelve") as simHashSetLock:
-
-        if "Queue" not in simHashSetLock:
-            simHashSetLock["Queue"] = []
-
-        sim_hash = simHash(totalText)
-
-        # Maintain a reasonable queue of links to compare to
-        while len(simHashSetLock["Queue"]) > simHashQueueLength:
-                simHashSetLock["Queue"].pop(0)
-
+    sim_hash = simHash(total_text)
+    while len(sim_hash_set_lock["Queue"]) > simHashQueueLength:
+        sim_hash_set_lock["Queue"].pop(0)
         
-        for sim in simHashSetLock["Queue"]:
-            if areSimilarSimHashes(sim_hash, sim, simHashThreshold):
-                #print("Near duplicate page found")
-                return False
+    for sim in sim_hash_set_lock["Queue"]:
+        if areSimilarSimHashes(sim_hash, sim, simHashThreshold):
+            return False
 
-        # Set the existance of the hash in the shelve
-        simHashSetLock["Queue"].append(sim_hash)
+    sim_hash_set_lock["Queue"].append(sim_hash)
+
+    with open(sim_hash_set_lock_file_path, "wb") as sim_hash_set_lock_file:
+        pickle.dump(sim_hash_set_lock, sim_hash_set_lock_file)
 
     return True
 
-def cyclic_redundancy_check(pageData):
-    
-    crcHash = 0xFFFF
+def cyclic_redundancy_check(page_data):
+    crc_hash = 0xFFFF
 
-    # Convert page data into bytes and iterate
-    for byte in pageData.encode():
+    for byte in page_data.encode():
+        crc_hash ^= byte
 
-        crcHash ^= byte # bitwise XOR
-
-        for _ in range(8): # 8 bits in a byte
-            if crcHash & 0x0001: # Check LSB 
-                crcHash = (crcHash >> 1) ^ 0xA001 # Polynomial divison process
+        for _ in range(8):
+            if crc_hash & 0x0001:
+                crc_hash = (crc_hash >> 1) ^ 0xA001
             else:
-                crcHash >>= 1 # Shift right by 1 bit to discard LSB
+                crc_hash >>= 1
 
-    # Return compliment of hash
-    return crcHash ^ 0xFFFF
+    return crc_hash ^ 0xFFFF
 
-def simHash(pageData):
-    # Seperate into words with weights
-    weightedWords = Counter([ps.stem(string) for string in nltk.word_tokenize(pageData) if len(string) > 1])
+def simHash(page_data):
+    weighted_words = Counter([ps.stem(string) for string in nltk.word_tokenize(page_data) if len(string) > 1])
+    hash_values = {word: bit_hash(word) for word in weighted_words}
 
-    # Get 8-bit hash values for every unique word
-    hashValues = {word: bit_hash(word) for word in weightedWords}
-
-    # Calculate the Vector V by summing weights
     simhash_value = [0] * 8
 
-    for word, count in weightedWords.items():
-        wordHash = hashValues[word]
+    for word, count in weighted_words.items():
+        word_hash = hash_values[word]
 
         for i in range(8):
-            # Offset hash digit by index of range, and multiply by 1 to get LSB
-            bit = (wordHash >> i) & 1
+            bit = (word_hash >> i) & 1
             simhash_value[i] += (1 if bit else -1) * count
     
-    # Convert into fingerprint
     simhash_fingerprint = 0
     for i in range(8):
         if simhash_value[i] > 0:
@@ -240,64 +240,83 @@ def simHash(pageData):
     return simhash_fingerprint
 
 def bit_hash(word):
-
-    # Function to generate an 8 bit hash for a word
     hash = 0
-
     for character in word:
-        # Add ASCII value to total hash
         hash += ord(character)
-    
-    # Ensure hash value is 8 bits
     return hash % 256
 
-def areSimilarSimHashes(firstSimHash, secondSimHash, threshold):
-    # Return true if two hashes are similar, else false
-
-    # Get number of different bits by XOR the two hashes, and count the occurances of 0 (similarities)
-    similarBits = bin(firstSimHash ^ secondSimHash).count('0')
-    # Calculate the similarity ratio
-    similarity = similarBits / 8
-
-    #if similarity >= threshold:
-    #    get_logger("CRAWLER").warning(f"simHash similarity: {similarity} already visited")
+def areSimilarSimHashes(first_simhash, second_simhash, threshold):
+    similar_bits = bin(first_simhash ^ second_simhash).count('0')
+    similarity = similar_bits / 8
 
     return similarity >= threshold
 
+
+def merge_partial_indexes(input_dir, output_file):
+    merged_index = {}
+
+    for root, _, files in os.walk(input_dir):
+        for file in files:
+            with open(os.path.join(root, file), "rb") as index_file:
+                partial_index = pickle.load(index_file)
+                merge_index(merged_index, partial_index)
+            # Remove the files once done
+            os.remove(os.path.join(root, file))
+            print(f"Removing partial index : {os.path.join(root, file)}")
+                
+    with open(output_file, "wb") as merged_index_file:
+        pickle.dump(merged_index, merged_index_file)
+
+def merge_index(merged_index, partial_index):
+    for term, postings in partial_index.items():
+        if term in merged_index:
+            merged_index[term].extend(postings)
+        else:
+            merged_index[term] = postings
+
 if __name__ == "__main__":
-
-    currentPath = os.getcwd()
-    analyst_folder = "\ANALYST"
-    dev_folder = "\DEV"
+    current_path = os.getcwd()
     
-    # lemmatizer = nltk.stem.WordNetLemmatizer()
+    inverted_index_id, documents_skipped, unique_words = read_and_index_json_files(current_path + "/" + FOLDERNAME)
+    print(f"{FOLDERNAME} data set loaded and indexed")
 
-    # invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
-    # print("Analyst data set loaded and indexed")
+    # Merging partial indexes into a single file
+    inverted_index_path = f"{FOLDERNAME}_inverted_index"
+    merged_index_path = f"{FOLDERNAME}_merged_inverted_index.pkl"
 
-    # with shelve.open("analystInfo.shelve") as analystInfo:
+    merge_partial_indexes(inverted_index_path, merged_index_path)
 
-    #     if len(analystInfo) == 0:
-    #         invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
-    #         print("Analyst data set loaded and indexed")
-            
-    #         analystInfo["indexedDocumesnts"] = invertedIndexID
-    #         analystInfo["skippedDocuments"] = documentsSkipped
-    #         analystInfo["uniqueTokens"] = len(uniqueWords)
-    #         analystInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('analystInvertedIndex.shelve.bak') / 1024)
-    #         analystInfo.sync()
+    # Cleanup
+    if os.path.exists(f"{FOLDERNAME}_info.pkl"):
+        os.remove(f"{FOLDERNAME}_info.pkl")
+        print(f"File {FOLDERNAME}_info.pkl has been deleted.")
 
-    with shelve.open("devInfo.shelve") as devInfo:
+    # Writing metadata to a separate file
+    with open(f"{FOLDERNAME}_info.pkl", "wb") as dev_info_file:
+        pickle.dump({
+            "indexed_documents": inverted_index_id,
+            "skipped_documents": documents_skipped,
+            "unique_tokens": len(unique_words)
+        }, dev_info_file)
 
-        if len(devInfo) == 0:
-            invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + dev_folder)
-            print("Analyst data set loaded and indexed")
-            
-            devInfo["indexedDocumesnts"] = invertedIndexID
-            devInfo["skippedDocuments"] = documentsSkipped
-            devInfo["uniqueTokens"] = len(uniqueWords)
-            devInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('analystInvertedIndex.shelve.bak') / 1024)
-            devInfo.sync()
+    # Cleanup
+    if os.path.exists(f"{FOLDERNAME}_inverted_index"):
+        os.remove(f"{FOLDERNAME}_inverted_index")
+        print(f"{FOLDERNAME}_inverted_index has been deleted.")
 
+    # Cleanup
+    if os.path.exists(f"{FOLDERNAME}_hashOfPages.pkl"):
+        os.remove(f"{FOLDERNAME}_hashOfPages.pkl")
+        print(f"{FOLDERNAME}_hashOfPages.pkl has been deleted.")
 
-    
+    # Cleanup
+    if os.path.exists(f"{FOLDERNAME}_simHashSetLock.pkl"):
+        os.remove(f"{FOLDERNAME}_simHashSetLock.pkl")
+        print(f"{FOLDERNAME}_simHashSetLock.pkl has been deleted.")
+
+    # even more cleanup
+    for root, dirs, files in os.walk(current_path):
+        for file in files:
+            if file.startswith(f"{FOLDERNAME}_partial_inverted_index"):
+                os.remove(f"{FOLDERNAME}_simHashSetLock.pkl")
+                print(f"{file} has been deleted.")

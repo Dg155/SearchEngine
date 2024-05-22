@@ -87,7 +87,6 @@ if __name__ == "__main__":
         print(f"----------Top results----------")
 
         with shelve.open("AnalystUrlMap.shelve") as urlMap:
-
             for i in range(count):
                 if i >= len(finalPostings):
                     print("----------No more results found----------")
