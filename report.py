@@ -16,7 +16,7 @@ def generate_report(title, stats, file):
 if __name__ == "__main__":
     with open("report.txt", "w") as f:
 
-        with shelve.open("analystInfo.shelve") as analystInfo:
+        with shelve.open("devInfo.shelve") as analystInfo:
             generate_report("Indexed Documents", analystInfo["indexedDocumesnts"], f)
             generate_report("Unique Tokens", analystInfo["uniqueTokens"], f)
             generate_report("Total Size", analystInfo["kilobytes"], f)

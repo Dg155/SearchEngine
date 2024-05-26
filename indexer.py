@@ -7,20 +7,26 @@ from bs4 import BeautifulSoup
 from Posting import Posting
 import psutil
 import re
+import math
 from nltk.stem import PorterStemmer
 
 
 
 simHashQueueLength = 100
 simHashThreshold = 0.85
-batchSize = 15000
+batchSize = 500
 readingMemoryLimit = 1000
 indexingMemoryLimit = 500
 ps = PorterStemmer()
 
-def intOrFloat(s):
-    pattern = r'^[+-]?(\d+(\.\d*)?|\.\d+)$'
-    return bool(re.fullmatch(pattern, s))
+def isValidToken(s):
+    pattern = r'[a-zA-Z]'
+    scientificNotationPattern = r'^[+-]?\d+(\.\d+)?[eE][+-]?\d+$'
+    hasLetter = re.search(pattern, s) is not None
+    singleSlash = s.count('/') <= 1
+    noTilda = s.count('~') == 0
+    notScientificNotation = not re.match(scientificNotationPattern, s)
+    return hasLetter and singleSlash and noTilda and notScientificNotation
 
 def readandIndexJsonFiles(folderPath):
 
@@ -28,6 +34,7 @@ def readandIndexJsonFiles(folderPath):
     documentsSkipped = 0
     uniqueWords = set()
     jsonSet = set()
+    fileNumber = 1
 
     for root, dirs, files in os.walk(folderPath):
 
@@ -41,17 +48,17 @@ def readandIndexJsonFiles(folderPath):
 
                 if memory.available / (1024 ** 2) < readingMemoryLimit:
                     print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {len(jsonSet)} documents")
-                    invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
+                    invertedIndexID, documentsSkipped, uniqueWords, fileNumber = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumber)
                     jsonSet.clear()
 
                 if len(jsonSet) > batchSize:
                     print(f"Batch size reached, indexing {batchSize} documents")
-                    invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
+                    invertedIndexID, documentsSkipped, uniqueWords, fileNumber = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumber)
                     jsonSet.clear()
     
     if len(jsonSet) > 0:
         print(f"Indexing remaining {len(jsonSet)} documents")
-        invertedIndexID, documentsSkipped, uniqueWords = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords)
+        invertedIndexID, documentsSkipped, uniqueWords, fileNumber = buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumber)
         jsonSet.clear()
 
         print(f"Finished reading {root}")
@@ -64,7 +71,7 @@ def parseDocumentIntoTokens(jsonFile):
 
     content = jsonFile["content"]
     
-    soup = BeautifulSoup(content, "html.parser")
+    soup = BeautifulSoup(content, "html.parser", from_encoding=jsonFile["encoding"] if "encoding" in jsonFile else "utf-8")
 
     # BeautifulSoup shouuld be able to handle bad HTML, but just in case include some error handling
     if soup:
@@ -77,8 +84,7 @@ def parseDocumentIntoTokens(jsonFile):
                 return "", Counter()
 
             if len(totalText) != 0:
-                tokens = [string for string in nltk.word_tokenize(totalText) if len(string) > 1] # Remove single character tokens like 's' and ','
-                tokens = [ps.stem(token) for token in tokens if not intOrFloat(token)]
+                tokens = [ps.stem(string) for string in nltk.word_tokenize(totalText) if len(string) > 1 and len(string) < 46 and isValidToken(string)] # Remove single character tokens like 's' and ','
                 return title, Counter(tokens) # Transform into a dictionary of token strings and their frequency
             
         except Exception as e:
@@ -88,7 +94,7 @@ def parseDocumentIntoTokens(jsonFile):
     return "", Counter()
         
 
-def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords):
+def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumber):
 
     indexedHashtable = dict()
     mapOfUrls = dict()
@@ -116,45 +122,150 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords):
                 # Add to urlMap
                 title = title if title else "Title Not Found"
                 mapOfUrls[str(invertedIndexID)] = [title, jsonData["url"]]
-                #print("Indexed document ", title)
+                print(f"Indexed document #{invertedIndexID+documentsSkipped}: {title}")
 
                 # Memory Checking
                 memory = psutil.virtual_memory() # Check memory usage
                 if memory.available / (1024 ** 2) < indexingMemoryLimit: # Ensure we respect memory limits so we dont error
+
                     print(f"Memory limit reached; current memory: {memory.available / (1024 ** 2)} MB; indexing {invertedIndexID} documents")
-                    with shelve.open("DevInvertedIndex.shelve") as invertedIndex:
 
-                        for key, value in indexedHashtable.items():
-                            if key in invertedIndex:
-                                invertedIndex[key] += value
-                            else:
-                                invertedIndex[key] = value
-
+                    # Write the remaining index to disk
+                    fileName = f"InvertedIndex_{fileNumber}.txt"
+                    with open(fileName, "w") as file:
+                        for token in sorted(indexedHashtable.keys()):
+                            try: # Try catch to handle any encoding errors
+                                postings = indexedHashtable[token]
+                                postingString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postings)
+                                file.write(f"{token}~{postingString}\n")
+                            except Exception as e:
+                                continue
+                        totalTextFiles.append(fileName)
+                        fileNumber += 1
                         indexedHashtable.clear()
 
-                        invertedIndex.sync()
-
             else:
-                #print("No tokens found in document ", jsonData["url"])
+                print("No tokens found in document #", invertedIndexID+documentsSkipped)
                 documentsSkipped += 1
     
     print(f"Indexed {len(jsonSet)} documents. Writing to disk.")
 
-    with shelve.open("DevInvertedIndex.shelve") as invertedIndex:
+    # Write the remaining index to disk
+    fileName = f"InvertedIndex_{fileNumber}.txt"
+    with open(fileName, "w") as file:
+        for token in sorted(indexedHashtable.keys()):
+            try: # Try catch to handle any encoding errors
+                postings = indexedHashtable[token]
+                postingString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postings)
+                file.write(f"{token}~{postingString}\n")
+            except Exception as e:
+                continue
+        totalTextFiles.append(fileName)
+        fileNumber += 1
+        indexedHashtable.clear()
 
-        for key, value in indexedHashtable.items():
-            if key in invertedIndex:
-                invertedIndex[key] += value
+    # Write the url map to disk
+    with shelve.open(f"UrlMap.shelve") as urlMap:
+        for key, value in mapOfUrls.items():
+            urlMap[key] = value
+
+    return invertedIndexID, documentsSkipped, uniqueWords, fileNumber
+
+def ParseLineToKeyPostingPair(line):
+    # Break key and list of postings into separate variables
+    key, postingsString = line.strip().split('~')
+
+    documentFrequency = len(postingsString.split(',')) # Number of documents containing the term
+
+    postings = []
+    # Iterate through each posting in the list
+    for posting in postingsString.split(','):
+        posting = posting.strip('[]').split(';') # Remove brackets and split into values
+        docID = int(posting[0])
+        count = int(posting[1])
+        termFreq = math.log(1 + count, 10) if count > 0 else 0
+        inverseDocFreq = math.log((invertedIndexID / documentFrequency), 10) # Log base 10 of 1 + 1
+        postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
+    return key, postings
+
+def combinePostings(postingList1, postingList2):
+    # Combine two posting lists into one
+    combinedPostings = []
+    i = 0
+    j = 0
+
+    while i < len(postingList1) and j < len(postingList2):
+        if postingList1[i].docID == postingList2[j].docID:
+            combinedPostings.append(Posting(postingList1[i].docID, postingList1[i].count + postingList2[j].count))
+            i += 1
+            j += 1
+        elif postingList1[i].docID < postingList2[j].docID:
+            combinedPostings.append(postingList1[i])
+            i += 1
+        else:
+            combinedPostings.append(postingList2[j])
+            j += 1
+    
+    # Add remaining postings from list1
+    while i < len(postingList1):
+        combinedPostings.append(postingList1[i])
+        i += 1
+    
+    # Add remaining postings from list2
+    while j < len(postingList2):
+        combinedPostings.append(postingList2[j])
+        j += 1
+    
+    return combinedPostings
+
+def combineFiles(file1, file2, output_file):
+
+    indexOfIndex = dict()
+
+    with open(file1, 'r') as f1, open(file2, 'r') as f2, open(output_file, 'w') as outf:
+        # Read first line from each file
+        line1 = f1.readline().strip()
+        line2 = f2.readline().strip()
+        
+        while line1 and line2: # While there are lines in both files
+
+            # Parse lines into key and postings
+            key1, postingList1 = ParseLineToKeyPostingPair(line1)
+            key2, postingList2 = ParseLineToKeyPostingPair(line2)
+            
+            if key1 == key2:
+                combinedPostings = combinePostings(postingList1, postingList2)
+                postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in combinedPostings)
+                indexOfIndex[key1] = outf.tell()
+                outf.write(f"{key1}~{postingsString}\n")
+                line1 = f1.readline().strip()
+                line2 = f2.readline().strip()
+            elif key1 < key2:
+                indexOfIndex[key1] = outf.tell()
+                outf.write(f"{line1}\n")
+                line1 = f1.readline().strip()
             else:
-                invertedIndex[key] = value
+                indexOfIndex[key2] = outf.tell()
+                outf.write(f"{line2}\n")
+                line2 = f2.readline().strip()
+        
+        # Write remaining lines from file1
+        while line1:
+            outf.write(f"{line1}\n")
+            line1 = f1.readline().strip()
+        
+        # Write remaining lines from file2
+        while line2:
+            outf.write(f"{line2}\n")
+            line2 = f2.readline().strip()
 
-        invertedIndex.sync()
+    print(f"Combined files, writing indexOfIndex")
 
-    with shelve.open("DevUrlMap.shelve") as urlMap:
-        urlMap.update(mapOfUrls)
-        urlMap.sync()
+    # Write the index of index to disk
+    with shelve.open(f"indexOfIndex.shelve") as indexMap:
+        indexMap.update(indexOfIndex)
 
-    return invertedIndexID, documentsSkipped, uniqueWords
+    return output_file
 
 
 
@@ -215,7 +326,7 @@ def cyclic_redundancy_check(pageData):
 
 def simHash(pageData):
     # Seperate into words with weights
-    weightedWords = Counter([ps.stem(string) for string in nltk.word_tokenize(pageData) if len(string) > 1])
+    weightedWords = Counter([ps.stem(string) for string in nltk.word_tokenize(pageData) if len(string) > 1 and len(string) < 46 and isValidToken(string)])
 
     # Get 8-bit hash values for every unique word
     hashValues = {word: bit_hash(word) for word in weightedWords}
@@ -269,35 +380,64 @@ if __name__ == "__main__":
     currentPath = os.getcwd()
     analyst_folder = "\ANALYST"
     dev_folder = "\DEV"
-    
-    # lemmatizer = nltk.stem.WordNetLemmatizer()
 
-    # invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
-    # print("Analyst data set loaded and indexed")
+    totalTextFiles = []
 
-    # with shelve.open("analystInfo.shelve") as analystInfo:
+    # invertedIndexID = 159
 
-    #     if len(analystInfo) == 0:
-    #         invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
-    #         print("Analyst data set loaded and indexed")
-            
-    #         analystInfo["indexedDocumesnts"] = invertedIndexID
-    #         analystInfo["skippedDocuments"] = documentsSkipped
-    #         analystInfo["uniqueTokens"] = len(uniqueWords)
-    #         analystInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('analystInvertedIndex.shelve.bak') / 1024)
-    #         analystInfo.sync()
+    # combineFiles("InvertedIndex_1.txt", "InvertedIndex_2.txt", "FinalCombined.txt")
 
-    with shelve.open("devInfo.shelve") as devInfo:
+    with shelve.open("analystInfo.shelve") as analystInfo:
 
-        if len(devInfo) == 0:
-            invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + dev_folder)
+        if len(analystInfo) == 0:
+            invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
             print("Analyst data set loaded and indexed")
+
+            print("Combining Indexes")
+
+            combinedIndex = totalTextFiles.pop(0)
+            i = 0
+            for index in totalTextFiles:
+                print(f"Combining {combinedIndex} and {index}")
+                if (i == len(totalTextFiles) - 1):
+                    combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt")
+                else:
+                    combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
+                i += 1
+
+            print("Finished combining indexes")
+
             
-            devInfo["indexedDocumesnts"] = invertedIndexID
-            devInfo["skippedDocuments"] = documentsSkipped
-            devInfo["uniqueTokens"] = len(uniqueWords)
-            devInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('analystInvertedIndex.shelve.bak') / 1024)
-            devInfo.sync()
+            analystInfo["indexedDocumesnts"] = invertedIndexID
+            analystInfo["skippedDocuments"] = documentsSkipped
+            analystInfo["uniqueTokens"] = len(uniqueWords)
+            analystInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
+            analystInfo.sync()
+
+    # with shelve.open("devInfo.shelve") as devInfo:
+
+    #     if len(devInfo) == 0:
+    #         invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + dev_folder)
+    #         print("Dev data set loaded and indexed")
+
+    #         print("Combining Indexes")
+
+    #         combinedIndex = totalTextFiles.pop(0)
+    #         i = 0
+    #         for index in totalTextFiles:
+    #             if (i == len(totalTextFiles) - 1):
+    #                 combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt")
+    #             else:
+    #                 combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
+    #             i += 1
+
+    #         print("Finished combining indexes")
+            
+    #         devInfo["indexedDocumesnts"] = invertedIndexID
+    #         devInfo["skippedDocuments"] = documentsSkipped
+    #         devInfo["uniqueTokens"] = len(uniqueWords)
+    #         devInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
+    #         devInfo.sync()
 
 
     

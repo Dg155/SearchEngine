@@ -12,7 +12,7 @@ def intersectPostings(posting1, posting2):
 
         if posting1[i].docID == posting2[j].docID:
             
-            merged.append(Posting(posting1[i].docID, posting1[i].freqCount + posting2[j].freqCount))
+            merged.append(Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf))
             i += 1
             j += 1
 
@@ -46,6 +46,21 @@ def mergePostingLists(totalPostings):
     
     return finalPosting
 
+def ParseLineToKeyPostingPair(line):
+    # Break key and list of postings into separate variables
+    key, postingsString = line.strip().split('~')
+
+    postings = []
+    # Iterate through each posting in the list
+    for posting in postingsString.split(','):
+        posting = posting.strip('[]').split(';') # Remove brackets and split into values
+        docID = int(posting[0])
+        count = int(posting[1])
+        termFreq = float(posting[2])
+        inverseDocFreq = float(posting[3])
+        postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
+    return key, postings
+
 if __name__ == "__main__":  
 
     ps = PorterStemmer()
@@ -65,17 +80,21 @@ if __name__ == "__main__":
 
         totalPostings = []
         
-        with shelve.open("AnalystInvertedIndex.shelve") as invertedIndex:
-            totalPostings = [invertedIndex[query] if query in invertedIndex else [] for query in totalQueries]
-
-        # for postList in totalPostings:
-        #     for post in postList:
-        #         print(post.docID, end=" ")
-        #     print()
+        with shelve.open("indexOfIndex.shelve") as indexMap:
+            for query in totalQueries:
+                if query in indexMap:
+                    seekPosition = indexMap[query]
+                    with open("FinalCombined.txt", "r") as indexFile:
+                        indexFile.seek(seekPosition)
+                        line = indexFile.readline().strip()
+                        key, postings = ParseLineToKeyPostingPair(line)
+                        totalPostings.append(postings)
+                else:
+                    totalPostings.append([])
 
         finalPostings = mergePostingLists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
 
-        finalPostings.sort(key=lambda x: x.freqCount, reverse=True) # Basic ranking by frequency count
+        finalPostings.sort(key=lambda x: (x.tf * x.idf), reverse=True) # Basic ranking by tf-idf
 
         if not finalPostings:
             print("----------No results found----------")
@@ -86,7 +105,7 @@ if __name__ == "__main__":
 
         print(f"----------Top results----------")
 
-        with shelve.open("AnalystUrlMap.shelve") as urlMap:
+        with shelve.open("UrlMap.shelve") as urlMap:
 
             for i in range(count):
                 if i >= len(finalPostings):
