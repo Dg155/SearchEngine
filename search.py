@@ -1,5 +1,6 @@
 import shelve
 import  time
+import json
 from nltk.stem import PorterStemmer
 from Posting import Posting
 
@@ -65,6 +66,15 @@ if __name__ == "__main__":
 
     ps = PorterStemmer()
 
+    print("----------Welcome to the search engine----------")
+    print("Loading index of index...")
+
+    # Load index of index from json file
+    with open("indexOfIndex.json", "r") as f:
+        indexMap = json.load(f)
+
+    print("Index of index loaded successfully")
+
     while(1):
         print("Please input your query:")
         query = input()
@@ -80,17 +90,16 @@ if __name__ == "__main__":
 
         totalPostings = []
         
-        with shelve.open("indexOfIndex.shelve") as indexMap:
-            for query in totalQueries:
-                if query in indexMap:
-                    seekPosition = indexMap[query]
-                    with open("FinalCombined.txt", "r") as indexFile:
-                        indexFile.seek(seekPosition)
-                        line = indexFile.readline().strip()
-                        key, postings = ParseLineToKeyPostingPair(line)
-                        totalPostings.append(postings)
-                else:
-                    totalPostings.append([])
+        for query in totalQueries:
+            if query in indexMap:
+                seekPosition = indexMap[query]
+                with open("FinalCombined.txt", "r") as indexFile:
+                    indexFile.seek(seekPosition)
+                    line = indexFile.readline().strip()
+                    key, postings = ParseLineToKeyPostingPair(line)
+                    totalPostings.append(postings)
+            else:
+                totalPostings.append([])
 
         finalPostings = mergePostingLists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
 

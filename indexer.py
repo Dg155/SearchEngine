@@ -9,12 +9,13 @@ import psutil
 import re
 import math
 from nltk.stem import PorterStemmer
+import sys
 
 
 
 simHashQueueLength = 100
 simHashThreshold = 0.85
-batchSize = 500
+batchSize = 1000
 readingMemoryLimit = 1000
 indexingMemoryLimit = 500
 ps = PorterStemmer()
@@ -164,10 +165,11 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
         fileNumber += 1
         indexedHashtable.clear()
 
+    print(f"Finished writing to disk, updating url map.")
+
     # Write the url map to disk
     with shelve.open(f"UrlMap.shelve") as urlMap:
-        for key, value in mapOfUrls.items():
-            urlMap[key] = value
+        urlMap.update(mapOfUrls)
 
     return invertedIndexID, documentsSkipped, uniqueWords, fileNumber
 
@@ -218,7 +220,7 @@ def combinePostings(postingList1, postingList2):
     
     return combinedPostings
 
-def combineFiles(file1, file2, output_file):
+def combineFiles(file1, file2, output_file, finalIndex = False):
 
     indexOfIndex = dict()
 
@@ -259,11 +261,11 @@ def combineFiles(file1, file2, output_file):
             outf.write(f"{line2}\n")
             line2 = f2.readline().strip()
 
-    print(f"Combined files, writing indexOfIndex")
-
-    # Write the index of index to disk
-    with shelve.open(f"indexOfIndex.shelve") as indexMap:
-        indexMap.update(indexOfIndex)
+    if finalIndex:
+        print(f"Combined files, writing indexOfIndex")
+        # write the index of index hashmap to json
+        with open("indexOfIndex.json", "w") as f:
+            json.dump(indexOfIndex, f)
 
     return output_file
 
@@ -385,59 +387,68 @@ if __name__ == "__main__":
 
     # invertedIndexID = 159
 
-    # combineFiles("InvertedIndex_1.txt", "InvertedIndex_2.txt", "FinalCombined.txt")
+    # combineFiles("InvertedIndex_1.txt", "InvertedIndex_2.txt", "FinalCombined.txt", True)
 
-    with shelve.open("analystInfo.shelve") as analystInfo:
+    if len(sys.argv) > 1:
+        argument = sys.argv[1]
+        if argument == "ANA":
+            with shelve.open("analystInfo.shelve") as analystInfo:
 
-        if len(analystInfo) == 0:
-            invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
-            print("Analyst data set loaded and indexed")
+                if len(analystInfo) == 0:
+                    invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + analyst_folder)
+                    print("Analyst data set loaded and indexed")
 
-            print("Combining Indexes")
+                    print("Combining Indexes")
 
-            combinedIndex = totalTextFiles.pop(0)
-            i = 0
-            for index in totalTextFiles:
-                print(f"Combining {combinedIndex} and {index}")
-                if (i == len(totalTextFiles) - 1):
-                    combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt")
-                else:
-                    combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
-                i += 1
+                    combinedIndex = totalTextFiles.pop(0)
+                    i = 0
+                    for index in totalTextFiles:
+                        print(f"Combining {combinedIndex} and {index}")
+                        if (i == len(totalTextFiles) - 1):
+                            combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt", True)
+                        else:
+                            combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
+                        i += 1
 
-            print("Finished combining indexes")
+                    print("Finished combining indexes")
 
-            
-            analystInfo["indexedDocumesnts"] = invertedIndexID
-            analystInfo["skippedDocuments"] = documentsSkipped
-            analystInfo["uniqueTokens"] = len(uniqueWords)
-            analystInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
-            analystInfo.sync()
+                    
+                    analystInfo["indexedDocumesnts"] = invertedIndexID
+                    analystInfo["skippedDocuments"] = documentsSkipped
+                    analystInfo["uniqueTokens"] = len(uniqueWords)
+                    analystInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
+                    analystInfo.sync()
 
-    # with shelve.open("devInfo.shelve") as devInfo:
+        elif argument == "DEV":
+            with shelve.open("devInfo.shelve") as devInfo:
 
-    #     if len(devInfo) == 0:
-    #         invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + dev_folder)
-    #         print("Dev data set loaded and indexed")
+                if len(devInfo) == 0:
+                    invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath + dev_folder)
+                    print("Dev data set loaded and indexed")
 
-    #         print("Combining Indexes")
+                    print("Combining Indexes")
 
-    #         combinedIndex = totalTextFiles.pop(0)
-    #         i = 0
-    #         for index in totalTextFiles:
-    #             if (i == len(totalTextFiles) - 1):
-    #                 combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt")
-    #             else:
-    #                 combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
-    #             i += 1
+                    combinedIndex = totalTextFiles.pop(0)
+                    i = 0
+                    for index in totalTextFiles:
+                        print(f"Combining {combinedIndex} and {index}")
+                        if (i == len(totalTextFiles) - 1):
+                            combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt", True)
+                        else:
+                            combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
+                        i += 1
 
-    #         print("Finished combining indexes")
-            
-    #         devInfo["indexedDocumesnts"] = invertedIndexID
-    #         devInfo["skippedDocuments"] = documentsSkipped
-    #         devInfo["uniqueTokens"] = len(uniqueWords)
-    #         devInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
-    #         devInfo.sync()
+                    print("Finished combining indexes")
+                    
+                    devInfo["indexedDocumesnts"] = invertedIndexID
+                    devInfo["skippedDocuments"] = documentsSkipped
+                    devInfo["uniqueTokens"] = len(uniqueWords)
+                    devInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
+                    devInfo.sync()
+        else:
+            print("Invalid argument. Please provide ANA or DEV.")
+    else:
+        print("No argument provided. Please provide ANA or DEV.")
 
 
     
