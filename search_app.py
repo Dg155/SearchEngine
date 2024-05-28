@@ -11,9 +11,10 @@ from kivy.core.window import Window
 from kivy.metrics import dp, sp
 from kivy.uix.image import Image
 import time
+import json
 from nltk.stem import PorterStemmer
 from Posting import Posting
-import pickle
+import shelve
 
 # Setting window background to white
 Window.clearcolor = (1, 1, 1, 1)
@@ -108,50 +109,93 @@ class ResultsScreen(Screen):
         self.count = count
         self.page = 0
 
+        # Load index of index from json file
+        with open("indexOfIndex.json", "r") as f:
+            indexMap = json.load(f)
+
         ps = PorterStemmer()
         start = time.time()
 
         # Process query
-        total_queries = [ps.stem(quer) for quer in query.split()]
+        totalQueries = [ps.stem(quer) for quer in query.split()]
 
         # Retrieve postings
-        total_postings = []
-        with open(f"{FOLDERNAME}_merged_inverted_index.pkl", "rb") as inverted_index_file:
-            inverted_index = pickle.load(inverted_index_file)
-            print(inverted_index)
-            total_postings = [inverted_index[query] if query in inverted_index else [] for query in total_queries]
-            print(total_postings)
+        totalPostings = []
+
+        for query in totalQueries:
+            if query in indexMap:
+                seekPosition = indexMap[query]
+                with open("FinalCombined.txt", "r") as indexFile:
+                    indexFile.seek(seekPosition)
+                    line = indexFile.readline().strip()
+                    print(line)
+                    key, postings = self.ParseLineToKeyPostingPair(line)
+                    totalPostings.append(postings)
+            else:
+                totalPostings.append([])
         
-        self.final_postings = self.merge_posting_lists(total_postings) if len(total_postings) > 1 else total_postings[0]
-        self.final_postings.sort(key=lambda x: x.tf_idf, reverse=True)
+        self.final_postings = self.merge_posting_lists(totalPostings) if len(totalPostings) > 1 else totalPostings[0]
+        self.final_postings.sort(key=lambda x: (x.tf * x.idf), reverse=True)
 
         end = time.time()
         self.search_time = end - start
         self.display_results()
 
-    def merge_posting_lists(self, total_postings):
-        if not total_postings:
+    def ParseLineToKeyPostingPair(self, line):
+        # Break key and list of postings into separate variables
+        key, postingsString = line.strip().split('~')
+
+        postings = []
+        # Iterate through each posting in the list
+        for posting in postingsString.split(','):
+            posting = posting.strip('[]').split(';') # Remove brackets and split into values
+            docID = int(posting[0])
+            count = int(posting[1])
+            termFreq = float(posting[2])
+            inverseDocFreq = float(posting[3])
+            postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
+        return key, postings
+
+    def merge_posting_lists(self, totalPostings):
+        if not totalPostings:
             return []
-        total_postings.sort(key=len)
-        final_posting = total_postings[0]
-        for i in range(1, len(total_postings)):
-            final_posting = self.intersect_postings(final_posting, total_postings[i])
-            if not final_posting:
+        
+        # Sort the posting lists by their length to optimize the intersection process
+        totalPostings.sort(key=len)
+        
+        # Intersect two postings lists at a time
+        finalPosting = totalPostings[0]
+
+        for i in range(1, len(totalPostings)):
+
+            finalPosting = self.intersect_postings(finalPosting, totalPostings[i])
+
+            if not finalPosting: # Early exit if there are no common docIDs
                 break
-        return final_posting
+        
+        return finalPosting
 
     def intersect_postings(self, posting1, posting2):
+        # Use a double pointer method to merge two postings together by there intersection
         merged = []
         i, j = 0, 0
+
         while i < len(posting1) and j < len(posting2):
+
             if posting1[i].docID == posting2[j].docID:
-                merged.append(Posting(posting1[i].docID, posting1[i].freqCount + posting2[j].freqCount))
+                
+                merged.append(Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf))
                 i += 1
                 j += 1
+
             elif posting1[i].docID < posting2[j].docID:
+
                 i += 1
+
             else:
+
                 j += 1
+
         return merged
 
     def display_results(self):
@@ -167,10 +211,10 @@ class ResultsScreen(Screen):
         start_index = self.page * self.count
         end_index = start_index + self.count
 
-        with open(f"{FOLDERNAME}_url_map.pkl", "rb") as url_map_file:
+        with shelve.open("UrlMap.shelve") as urlMap:
             for i in range(start_index, min(end_index, len(self.final_postings))):
                 doc_id = str(self.final_postings[i].docID)
-                title, url, description = url_map_file.get(str(doc_id), ["Title Not Found", "URL Not Found", "Summary Not Found"])
+                title, url, description = urlMap[doc_id] if doc_id in urlMap else ("Title Not Found", "URL Not Found", "Summary Not Found")
                 result_box = BoxLayout(orientation='vertical', padding=[dp(10), dp(10), dp(10), dp(10)], spacing=dp(5))
                 result_box.add_widget(Label(text=f"#{i+1}: {title[0]}", font_size=sp(16), color=[0, 0, 1, 1], text_size=(self.width-dp(20), None), halign='left', valign='middle'))
                 result_box.add_widget(Label(text=url, font_size=sp(14), color=[0, 0, 0, 1], text_size=(self.width-dp(20), None), halign='left', valign='middle'))
