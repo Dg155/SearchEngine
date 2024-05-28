@@ -15,7 +15,7 @@ import sys
 
 simHashQueueLength = 100
 simHashThreshold = 0.85
-batchSize = 1000
+batchSize = 20000
 readingMemoryLimit = 1000
 indexingMemoryLimit = 500
 ps = PorterStemmer()

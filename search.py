@@ -67,13 +67,10 @@ if __name__ == "__main__":
     ps = PorterStemmer()
 
     print("----------Welcome to the search engine----------")
-    print("Loading index of index...")
 
     # Load index of index from json file
     with open("indexOfIndex.json", "r") as f:
         indexMap = json.load(f)
-
-    print("Index of index loaded successfully")
 
     while(1):
         print("Please input your query:")
