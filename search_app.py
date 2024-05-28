@@ -128,7 +128,6 @@ class ResultsScreen(Screen):
                 with open("FinalCombined.txt", "r") as indexFile:
                     indexFile.seek(seekPosition)
                     line = indexFile.readline().strip()
-                    print(line)
                     key, postings = self.ParseLineToKeyPostingPair(line)
                     totalPostings.append(postings)
             else:
