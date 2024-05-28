@@ -185,7 +185,7 @@ def ParseLineToKeyPostingPair(line):
         posting = posting.strip('[]').split(';') # Remove brackets and split into values
         docID = int(posting[0])
         count = int(posting[1])
-        termFreq = math.log(1 + count, 10) if count > 0 else 0
+        termFreq = 1 + math.log(count, 10) if count > 0 else 0
         inverseDocFreq = math.log((invertedIndexID / documentFrequency), 10) # Log base 10 of 1 + 1
         postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
     return key, postings
