@@ -17,4 +17,8 @@ The second argument allows the user to choose the batch size of documents the in
 - Example: `python indexer.py DEV 20000`
 ### Query Processor
 search.py:
+- Running this file through the terminal will prompt the user to enter a query, and a number of results to return. No arguments are required.
+- Example: `python search.py`
 search_app.py:
+- Running this file through the terminal will open a GUI where the user can enter a query and a number of results to return.
+- Example: `python search_app.py`
