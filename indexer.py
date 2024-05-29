@@ -94,18 +94,34 @@ def parseDocumentIntoTokens(jsonFile):
             totalText = soup.get_text()
 
             if not checkDuplicate(soup):
-                return "", Counter(), ""
+                return "", Counter(), Counter(), Counter(), Counter(), ""
 
             if len(totalText) != 0:
+                # First, get the total tokens
                 summary = summarize_text(totalText)
                 tokens = [ps.stem(string) for string in nltk.word_tokenize(totalText) if len(string) > 1 and len(string) < 46 and isValidToken(string)] # Remove single character tokens like 's' and ','
-                return title, Counter(tokens), summary # Transform into a dictionary of token strings and their frequency
+                # Then, get all the weighted tokens
+                totalBoldedString = ""
+                for string in (soup.find_all('b') + soup.find_all('strong')):
+                    totalBoldedString += string.text + " "
+                totalTitleString = ""
+                for string in soup.find_all('title'):
+                    totalTitleString += string.text + " "
+                totalHeaderString = ""
+                for string in soup.find_all(re.compile('^h[1-6]$')):
+                    totalHeaderString += string.text + " "
+
+                boldedTokens = [ps.stem(string) for string in nltk.word_tokenize(totalBoldedString) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
+                titleTokens = [ps.stem(string) for string in nltk.word_tokenize(totalTitleString) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
+                headerTokens = [ps.stem(string) for string in nltk.word_tokenize(totalHeaderString) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
+
+                return title, Counter(tokens), Counter(boldedTokens), Counter(titleTokens), Counter(headerTokens), summary # Transform into a dictionary of token strings and their frequency
             
         except Exception as e:
             print(e)
-            return "", Counter(), ""
+            return "", Counter(), Counter(), Counter(), Counter(), ""
         
-    return "", Counter(), ""
+    return "", Counter(), Counter(), Counter(), Counter(), ""
         
 
 def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumber):
@@ -118,7 +134,7 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
         with open(filePath, "r") as f:
 
             jsonData = json.load(f)
-            title, tokens, summary = parseDocumentIntoTokens(jsonData)
+            title, tokens, boldTokens, titleTokens, headerTokens, summary = parseDocumentIntoTokens(jsonData)
 
             if len(tokens) != 0:
 
@@ -129,9 +145,9 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
                     uniqueWords.add(token)
                     # Add posting to inverted index
                     if token not in indexedHashtable:
-                        indexedHashtable[token] = [Posting(invertedIndexID, count)]
+                        indexedHashtable[token] = [Posting(invertedIndexID, count, boldTokens[token], headerTokens[token], titleTokens[token])]
                     else:
-                        indexedHashtable[token].append(Posting(invertedIndexID, count))
+                        indexedHashtable[token].append(Posting(invertedIndexID, count, boldTokens[token], headerTokens[token], titleTokens[token]))
                 
                 # Add to urlMap
                 title = title if title else "Title Not Found"
@@ -150,7 +166,7 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
                         for token in sorted(indexedHashtable.keys()):
                             try: # Try catch to handle any encoding errors
                                 postings = indexedHashtable[token]
-                                postingString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postings)
+                                postingString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postings)
                                 file.write(f"{token}~{postingString}\n")
                             except Exception as e:
                                 continue
@@ -170,7 +186,7 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
         for token in sorted(indexedHashtable.keys()):
             try: # Try catch to handle any encoding errors
                 postings = indexedHashtable[token]
-                postingString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postings)
+                postingString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postings)
                 file.write(f"{token}~{postingString}\n")
             except Exception as e:
                 continue
@@ -198,9 +214,12 @@ def ParseLineToKeyPostingPair(line):
         posting = posting.strip('[]').split(';') # Remove brackets and split into values
         docID = int(posting[0])
         count = int(posting[1])
+        boldCount = int(posting[2])
+        headerCount = int(posting[3])
+        titleCount = int(posting[4])
         termFreq = 1 + math.log(count, 10) if count > 0 else 0
         inverseDocFreq = math.log((invertedIndexID / documentFrequency), 10) # Log base 10 of 1 + 1
-        postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
+        postings.append(Posting(docID, count, boldCount, headerCount, titleCount, tf=termFreq, idf=inverseDocFreq))
     return key, postings
 
 def combinePostings(postingList1, postingList2):
@@ -211,7 +230,9 @@ def combinePostings(postingList1, postingList2):
 
     while i < len(postingList1) and j < len(postingList2):
         if postingList1[i].docID == postingList2[j].docID:
-            combinedPostings.append(Posting(postingList1[i].docID, postingList1[i].count + postingList2[j].count))
+            newPosting = Posting(postingList1[i].docID, postingList1[i].count + postingList2[j].count, postingList1[i].boldCount + postingList2[j].boldCount, postingList1[i].headerCount + postingList2[j].headerCount, postingList1[i].titleCount + postingList2[j].titleCount, tf=postingList1[i].tf + postingList2[j].tf, idf=postingList1[i].idf + postingList2[j].idf)
+            newPosting.tfidf = postingList1[i].tfidf + postingList2[j].tfidf
+            combinedPostings.append(newPosting)
             i += 1
             j += 1
         elif postingList1[i].docID < postingList2[j].docID:
@@ -248,30 +269,30 @@ def combineFiles(file1, file2, output_file):
             
             if key1 == key2:
                 combinedPostings = combinePostings(postingList1, postingList2)
-                postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in combinedPostings)
+                postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in combinedPostings)
                 outf.write(f"{key1}~{postingsString}\n")
                 line1 = f1.readline().strip()
                 line2 = f2.readline().strip()
             elif key1 < key2:
-                postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postingList1)
+                postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList1)
                 outf.write(f"{key1}~{postingsString}\n")
                 line1 = f1.readline().strip()
             else:
-                postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postingList2)
+                postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList2)
                 outf.write(f"{key2}~{postingsString}\n")
                 line2 = f2.readline().strip()
         
         # Write remaining lines from file1
         while line1:
             key1, postingList1 = ParseLineToKeyPostingPair(line1)
-            postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postingList1)
+            postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList1)
             outf.write(f"{key1}~{postingsString}\n")
             line1 = f1.readline().strip()
         
         # Write remaining lines from file2
         while line2:
             key2, postingList2 = ParseLineToKeyPostingPair(line2)
-            postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postingList2)
+            postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList2)
             outf.write(f"{key2}~{postingsString}\n")
             line2 = f2.readline().strip()
 
@@ -391,7 +412,7 @@ def generateSingleFileIndex(inputFile, outputFile):
         line = f.readline().strip()
         while line:
             key, postingList = ParseLineToKeyPostingPair(line)
-            postingsString = ','.join(f'[{p.docID};{p.freq};{p.tf};{p.idf}]' for p in postingList)
+            postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList)
             outf.write(f"{key}~{postingsString}\n")
             line = f.readline().strip()
 
@@ -425,51 +446,49 @@ if __name__ == "__main__":
         if argument == "ANA" or argument == "DEV":
             currentPath = currentPath + analyst_folder if argument == "ANA" else currentPath + dev_folder
             with shelve.open(f"{argument}Info.shelve") as dataInfo:
-
-                if len(dataInfo) == 0:
                     
-                    print(f"Indexing {argument} data set with batch size: {batchSize}")
-                    invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath)
-                    print(f"{argument} data set loaded and indexed")
+                print(f"Indexing {argument} data set with batch size: {batchSize}")
+                invertedIndexID, documentsSkipped, uniqueWords = readandIndexJsonFiles(currentPath)
+                print(f"{argument} data set loaded and indexed")
 
-                    print("Combining Indexes")
+                print("Combining Indexes")
 
-                    if len(totalTextFiles) == 1:
-                        print("Only one index file, no need to combine")
-                        generateSingleFileIndex(totalTextFiles[0], "FinalCombined.txt")
-                        os.remove(totalTextFiles[0])
-                    else:
-                        combinedIndex = totalTextFiles.pop(0)
-                        i = 0
-                        for index in totalTextFiles:
-                            print(f"Combining {combinedIndex} and {index}")
-                            if (i == len(totalTextFiles) - 1):
-                                combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt")
-                            else:
-                                combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
-                            os.remove(index)
-                            i += 1
+                if len(totalTextFiles) == 1:
+                    print("Only one index file, no need to combine")
+                    generateSingleFileIndex(totalTextFiles[0], "FinalCombined.txt")
+                    os.remove(totalTextFiles[0])
+                else:
+                    combinedIndex = totalTextFiles.pop(0)
+                    i = 0
+                    for index in totalTextFiles:
+                        print(f"Combining {combinedIndex} and {index}")
+                        if (i == len(totalTextFiles) - 1):
+                            combinedIndex = combineFiles(combinedIndex, index, f"FinalCombined.txt")
+                        else:
+                            combinedIndex = combineFiles(combinedIndex, index, f"CombinedIndex_{i}.txt")
+                        os.remove(index)
+                        i += 1
 
-                    print(f"Combined files, writing indexOfIndex")
-                    # create the index of index hashmap and write it to json
-                    generateIndexOfIndex("FinalCombined.txt")
+                print(f"Combined files, writing indexOfIndex")
+                # create the index of index hashmap and write it to json
+                generateIndexOfIndex("FinalCombined.txt")
 
-                    print("Finished combining indexes")
+                print("Finished combining indexes")
 
-                    
-                    dataInfo["indexedDocumesnts"] = invertedIndexID
-                    dataInfo["skippedDocuments"] = documentsSkipped
-                    dataInfo["uniqueTokens"] = len(uniqueWords)
-                    dataInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
-                    dataInfo.sync()
+                
+                dataInfo["indexedDocumesnts"] = invertedIndexID
+                dataInfo["skippedDocuments"] = documentsSkipped
+                dataInfo["uniqueTokens"] = len(uniqueWords)
+                dataInfo["kilobytes"] = "{:.2f} KB".format(os.path.getsize('FinalCombined.txt') / 1024)
+                dataInfo.sync()
 
-                    # Clean up data used for duplicate and near duplicate pages
-                    os.remove("simHashSetLock.shelve.bak")
-                    os.remove("simHashSetLock.shelve.dat")
-                    os.remove("simHashSetLock.shelve.dir")
-                    os.remove("hashOfPages.shelve.bak")
-                    os.remove("hashOfPages.shelve.dat")
-                    os.remove("hashOfPages.shelve.dir")
+                # Clean up data used for duplicate and near duplicate pages
+                os.remove("simHashSetLock.shelve.bak")
+                os.remove("simHashSetLock.shelve.dat")
+                os.remove("simHashSetLock.shelve.dir")
+                os.remove("hashOfPages.shelve.bak")
+                os.remove("hashOfPages.shelve.dat")
+                os.remove("hashOfPages.shelve.dir")
         else:
             print("Invalid argument. Please provide ANA or DEV.")
     else:

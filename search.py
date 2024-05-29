@@ -4,6 +4,10 @@ import json
 from nltk.stem import PorterStemmer
 from Posting import Posting
 
+BOLDWEIGHT = 0.2
+HEADERWEIGHT = 1
+TITLEWEIGHT = 2
+
 def intersectPostings(posting1, posting2):
     # Use a double pointer method to merge two postings together by there intersection
     merged = []
@@ -12,9 +16,8 @@ def intersectPostings(posting1, posting2):
     while i < len(posting1) and j < len(posting2):
 
         if posting1[i].docID == posting2[j].docID:
-            
-            newPosting = Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf)
-            newPosting.tfidf = posting1[i].tfidf + posting2[i].tfidf
+            newPosting = Posting(posting1[i].docID, posting1[i].count + posting2[j].count, posting1[i].boldCount + posting2[j].boldCount, posting1[i].headerCount + posting2[j].headerCount, posting1[i].titleCount + posting2[j].titleCount, tf=posting1[i].tf + posting2[j].tf, idf=posting1[i].idf + posting2[j].idf)
+            newPosting.tfidf = posting1[i].tfidf + posting2[j].tfidf
             merged.append(newPosting)
             i += 1
             j += 1
@@ -59,9 +62,12 @@ def ParseLineToKeyPostingPair(line):
         posting = posting.strip('[]').split(';') # Remove brackets and split into values
         docID = int(posting[0])
         count = int(posting[1])
-        termFreq = float(posting[2])
-        inverseDocFreq = float(posting[3])
-        postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
+        boldCount = int(posting[2])
+        headerCount = int(posting[3])
+        titleCount = int(posting[4])
+        termFreq = float(posting[5])
+        inverseDocFreq = float(posting[6])
+        postings.append(Posting(docID, count, boldCount, headerCount, titleCount, tf=termFreq, idf=inverseDocFreq))
     return key, postings
 
 if __name__ == "__main__":  
@@ -104,8 +110,8 @@ if __name__ == "__main__":
                 totalPostings.append([])
 
         finalPostings = mergePostingLists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
-
-        finalPostings.sort(key=lambda x: (x.tfidf), reverse=True) # Basic ranking by tf-idf
+            
+        finalPostings.sort(key=lambda x: (x.tfidf * (1 + (BOLDWEIGHT * x.boldCount) + (HEADERWEIGHT * x.headerCount) + (TITLEWEIGHT * x.titleCount))), reverse=True) # Basic ranking by tf-idf
 
         if not finalPostings:
             print("----------No results found----------")
