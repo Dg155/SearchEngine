@@ -1,0 +1,30 @@
+Queries Tested:
+1. monster
+- First 3 links were just huge text files with monster repeated a lot
+2. computer science
+3. fumble
+4. couple
+- First three links are from large text files again
+5. yoshi
+6. water bottle
+- First three links are from large text files again
+7. pepsi
+8. gas station
+- First three links are from large text files again
+9. coke
+10. to be or not to be
+- Took over 0.5 seconds to retrieve results
+11. sodium chloride
+12. search engine
+- First few links are not related to search engines
+13. ICS
+14. Video Game Development Club
+- First website is not related to the query, but the rest are
+15. evacuation plan
+16. resident assistant
+- First link is not related to the query, but the rest are
+17. protest
+18. robots
+19. graduation ceremony
+20. Constance Steinkuehler
+- Her home page is number 7, although the first few links are related to her

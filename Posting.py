@@ -1,5 +1,10 @@
 class Posting:
-    def __init__(self, docID, tf_idf, fields = []):
+    def __init__(self, docID, freq, boldCount, headerCount, titleCount, tf = 0, idf = 0):
         self.docID = docID
-        self.tf_idf = tf_idf # We would need to change this to TF-IDF eventually
-        self.fields = fields
+        self.freq = freq
+        self.boldCount = boldCount
+        self.headerCount = headerCount
+        self.titleCount = titleCount
+        self.tf = tf
+        self.idf = idf
+        self.tfidf = tf * idf
