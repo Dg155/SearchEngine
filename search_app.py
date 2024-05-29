@@ -215,7 +215,7 @@ class ResultsScreen(Screen):
                 doc_id = str(self.final_postings[i].docID)
                 title, url, description = urlMap[doc_id] if doc_id in urlMap else ("Title Not Found", "URL Not Found", "Summary Not Found")
                 result_box = BoxLayout(orientation='vertical', padding=[dp(10), dp(10), dp(10), dp(10)], spacing=dp(5))
-                result_box.add_widget(Label(text=f"#{i+1}: {title[0]}", font_size=sp(16), color=[0, 0, 1, 1], text_size=(self.width-dp(20), None), halign='left', valign='middle'))
+                result_box.add_widget(Label(text=f"#{i+1}: {title}", font_size=sp(16), color=[0, 0, 1, 1], text_size=(self.width-dp(20), None), halign='left', valign='middle'))
                 result_box.add_widget(Label(text=url, font_size=sp(14), color=[0, 0, 0, 1], text_size=(self.width-dp(20), None), halign='left', valign='middle'))
                 result_box.add_widget(Label(text=description, font_size=sp(14), color=[0, 0, 0, 1], text_size=(self.width-dp(20), None), halign='left', valign='middle'))
                 self.results_layout.add_widget(result_box)
