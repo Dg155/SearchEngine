@@ -13,7 +13,9 @@ def intersectPostings(posting1, posting2):
 
         if posting1[i].docID == posting2[j].docID:
             
-            merged.append(Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf))
+            newPosting = Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf)
+            newPosting.tfidf = posting1[i].tfidf + posting2[i].tfidf
+            merged.append(newPosting)
             i += 1
             j += 1
 
@@ -71,6 +73,9 @@ if __name__ == "__main__":
     # Load index of index from json file
     with open("indexOfIndex.json", "r") as f:
         indexMap = json.load(f)
+    # Load URL map from json file
+    with open("URLMap.json", "r") as f:
+        urlMap = json.load(f)
 
     while(1):
         print("Please input your query:")
@@ -100,7 +105,7 @@ if __name__ == "__main__":
 
         finalPostings = mergePostingLists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
 
-        finalPostings.sort(key=lambda x: (x.tf * x.idf), reverse=True) # Basic ranking by tf-idf
+        finalPostings.sort(key=lambda x: (x.tfidf), reverse=True) # Basic ranking by tf-idf
 
         if not finalPostings:
             print("----------No results found----------")
@@ -111,11 +116,9 @@ if __name__ == "__main__":
 
         print(f"----------Top results----------")
 
-        with shelve.open("UrlMap.shelve") as urlMap:
-
-            for i in range(count):
-                if i >= len(finalPostings):
-                    print("----------No more results found----------")
-                    break
-                urlInfo = urlMap[str(finalPostings[i].docID)]
-                print(f"#{i+1}: {urlInfo[0]} ({urlInfo[1]})")
+        for i in range(count):
+            if i >= len(finalPostings):
+                print("----------No more results found----------")
+                break
+            urlInfo = urlMap[str(finalPostings[i].docID)]
+            print(f"#{i+1}: {urlInfo[0]} ({urlInfo[1]})")

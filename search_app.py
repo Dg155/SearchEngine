@@ -134,7 +134,7 @@ class ResultsScreen(Screen):
                 totalPostings.append([])
         
         self.final_postings = self.merge_posting_lists(totalPostings) if len(totalPostings) > 1 else totalPostings[0]
-        self.final_postings.sort(key=lambda x: (x.tf * x.idf), reverse=True)
+        self.final_postings.sort(key=lambda x: (x.tfidf), reverse=True)
 
         end = time.time()
         self.search_time = end - start
@@ -183,7 +183,9 @@ class ResultsScreen(Screen):
 
             if posting1[i].docID == posting2[j].docID:
                 
-                merged.append(Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf))
+                newPosting = Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf)
+                newPosting.tfidf = posting1[i].tfidf + posting2[i].tfidf
+                merged.append(newPosting)
                 i += 1
                 j += 1
 

@@ -181,8 +181,8 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
     print(f"Finished writing to disk, updating url map.")
 
     # Write the url map to disk
-    with shelve.open(f"UrlMap.shelve") as urlMap:
-        urlMap.update(mapOfUrls)
+    with open("URLMap.json", "w") as f:
+        json.dump(mapOfUrls, f)
 
     return invertedIndexID, documentsSkipped, uniqueWords, fileNumber
 

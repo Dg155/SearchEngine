@@ -5,3 +5,4 @@ class Posting:
         self.fields = fields
         self.tf = tf
         self.idf = idf
+        self.tfidf = tf * idf
