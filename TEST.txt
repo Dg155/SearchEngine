@@ -1,30 +1,44 @@
-Queries Tested:
-1. monster
-- First 3 links were just huge text files with monster repeated a lot
+Good Queries Tested:
+1. how do I learn how to make AI machines
 2. computer science
 3. fumble
-4. couple
+4. pepsi
+5. coke
+6. protest
+7. robot dance
+8. Housing options
+9. evacuation plan
+10. ICS
+Improved Queries Tested:
+11. monster
+- First 3 links were just huge text files with monster repeated a lot
+- Improved by adjusting weights for tokens in bold/header/title
+12. couple
 - First three links are from large text files again
-5. yoshi
-6. water bottle
+- Improved by adjusting weights for tokens in bold/header/title
+13. water bottle
 - First three links are from large text files again
-7. pepsi
-8. gas station
-- First three links are from large text files again
-9. coke
-10. to be or not to be
+- Improved by adjusting weights for tokens in bold/header/title
+14. immigration
+- First few links are more related to machine learning than immigration
+- Improved by adjusting weights for tokens in bold/header/title
+15. to be or not to be
 - Took over 0.5 seconds to retrieve results
-11. sodium chloride
-12. search engine
+- Improved by storing the index in txt files
+16. search engine
 - First few links are not related to search engines
-13. ICS
-14. Video Game Development Club
+- Improved by adjusting weights for tokens in bold/header/title, but first few links are still more related to ICS classes
+17. Video Game Development Club
+- Took over 0.5 seconds to retrieve results
+- Improved by storing the index in txt files
 - First website is not related to the query, but the rest are
-15. evacuation plan
-16. resident assistant
+- Improved by adjusting weights for tokens in bold/header/title
+18. resident assistant
 - First link is not related to the query, but the rest are
-17. protest
-18. robots
-19. graduation ceremony
+- Improved by adjusting weights for tokens in bold/header/title
+19. four score and seven years ago
+- Took over 0.5 seconds to retrieve results
+- Improved by storing the index in txt files
 20. Constance Steinkuehler
 - Her home page is number 7, although the first few links are related to her
+- Improved by adjusting weights for tokens in bold/header/title

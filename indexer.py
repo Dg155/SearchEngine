@@ -31,10 +31,10 @@ def summarize_text(content):
 def isValidToken(s):
     pattern = r'[a-zA-Z]'
     scientificNotationPattern = r'^[+-]?\d+(\.\d+)?[eE][+-]?\d+$'
-    hasLetter = re.search(pattern, s) is not None
-    singleSlash = s.count('/') <= 1
-    noTilda = s.count('~') == 0
-    notScientificNotation = not re.match(scientificNotationPattern, s)
+    hasLetter = re.search(pattern, s) is not None # Ensure the token has at least 1 letter to filter out random numbers
+    singleSlash = s.count('/') <= 1 # Ensure the token has at most 1 slash to filter out URLs
+    noTilda = s.count('~') == 0 # Ensure the token has no tilda to filter out URLs
+    notScientificNotation = not re.match(scientificNotationPattern, s) # Ensure the token is not a scientific notation number
     return hasLetter and singleSlash and noTilda and notScientificNotation
 
 def readandIndexJsonFiles(folderPath):
@@ -45,6 +45,7 @@ def readandIndexJsonFiles(folderPath):
     jsonSet = set()
     fileNumber = 1
 
+    # Read through and index every json in the directory
     for root, dirs, files in os.walk(folderPath):
 
         for file in files:
@@ -84,6 +85,7 @@ def parseDocumentIntoTokens(jsonFile):
 
     content = jsonFile["content"]
     
+    # Use beautiful soup to parse the HTML content, ensuring we have encoded it correctly
     soup = BeautifulSoup(content, "html.parser", from_encoding=jsonFile["encoding"] if "encoding" in jsonFile else "utf-8")
 
     # BeautifulSoup shouuld be able to handle bad HTML, but just in case include some error handling
@@ -93,14 +95,19 @@ def parseDocumentIntoTokens(jsonFile):
             title = soup.find('title').text if soup.find('title') else None
             totalText = soup.get_text()
 
+            # Check for duplicates and near duplicates
             if not checkDuplicate(soup):
                 return "", Counter(), Counter(), Counter(), Counter(), ""
 
             if len(totalText) != 0:
-                # First, get the total tokens
+                # First, get the total tokens of the website
                 summary = summarize_text(totalText)
-                tokens = [ps.stem(string) for string in nltk.word_tokenize(totalText) if len(string) > 1 and len(string) < 46 and isValidToken(string)] # Remove single character tokens like 's' and ','
+                # Remove single character tokens like 's' and ',', remove tokens greater than 45 characters, and remove tokens that are not valid
+                tokens = [ps.stem(string) for string in nltk.word_tokenize(totalText) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
+
                 # Then, get all the weighted tokens
+
+                # Combine all text into a single string so it is easier to tokenize
                 totalBoldedString = ""
                 for string in (soup.find_all('b') + soup.find_all('strong')):
                     totalBoldedString += string.text + " "
@@ -111,6 +118,7 @@ def parseDocumentIntoTokens(jsonFile):
                 for string in soup.find_all(re.compile('^h[1-6]$')):
                     totalHeaderString += string.text + " "
 
+                # Tokenize the bolded, title, and header text
                 boldedTokens = [ps.stem(string) for string in nltk.word_tokenize(totalBoldedString) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
                 titleTokens = [ps.stem(string) for string in nltk.word_tokenize(totalTitleString) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
                 headerTokens = [ps.stem(string) for string in nltk.word_tokenize(totalHeaderString) if len(string) > 1 and len(string) < 46 and isValidToken(string)]
@@ -126,6 +134,7 @@ def parseDocumentIntoTokens(jsonFile):
 
 def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumber):
 
+    # Start off by storing inverted index and index of urls in memory
     indexedHashtable = dict()
     mapOfUrls = dict()
 
@@ -166,6 +175,7 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
                         for token in sorted(indexedHashtable.keys()):
                             try: # Try catch to handle any encoding errors
                                 postings = indexedHashtable[token]
+                                # Write each key/postings into a custom formatted string to later parse
                                 postingString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postings)
                                 file.write(f"{token}~{postingString}\n")
                             except Exception as e:
@@ -186,6 +196,7 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
         for token in sorted(indexedHashtable.keys()):
             try: # Try catch to handle any encoding errors
                 postings = indexedHashtable[token]
+                # Write each key/postings into a custom formatted string to later parse
                 postingString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postings)
                 file.write(f"{token}~{postingString}\n")
             except Exception as e:
@@ -197,8 +208,8 @@ def buildIndex(jsonSet, invertedIndexID, documentsSkipped, uniqueWords, fileNumb
     print(f"Finished writing to disk, updating url map.")
 
     # Write the url map to disk
-    with open("URLMap.json", "w") as f:
-        json.dump(mapOfUrls, f)
+    with shelve.open(f"UrlMap.shelve") as urlMap:
+        urlMap.update(mapOfUrls)
 
     return invertedIndexID, documentsSkipped, uniqueWords, fileNumber
 
@@ -217,27 +228,32 @@ def ParseLineToKeyPostingPair(line):
         boldCount = int(posting[2])
         headerCount = int(posting[3])
         titleCount = int(posting[4])
+        # Calculate term frequency and inverse document frequency during index parsing
         termFreq = 1 + math.log(count, 10) if count > 0 else 0
         inverseDocFreq = math.log((invertedIndexID / documentFrequency), 10) # Log base 10 of 1 + 1
         postings.append(Posting(docID, count, boldCount, headerCount, titleCount, tf=termFreq, idf=inverseDocFreq))
     return key, postings
 
 def combinePostings(postingList1, postingList2):
-    # Combine two posting lists into one
+    # Combine two posting lists into one using a double pointer method
     combinedPostings = []
     i = 0
     j = 0
 
     while i < len(postingList1) and j < len(postingList2):
+
         if postingList1[i].docID == postingList2[j].docID:
+            # If they have the same id, combine all of their values and recalculate the tf-idf
             newPosting = Posting(postingList1[i].docID, postingList1[i].count + postingList2[j].count, postingList1[i].boldCount + postingList2[j].boldCount, postingList1[i].headerCount + postingList2[j].headerCount, postingList1[i].titleCount + postingList2[j].titleCount, tf=postingList1[i].tf + postingList2[j].tf, idf=postingList1[i].idf + postingList2[j].idf)
             newPosting.tfidf = postingList1[i].tfidf + postingList2[j].tfidf
             combinedPostings.append(newPosting)
             i += 1
             j += 1
+
         elif postingList1[i].docID < postingList2[j].docID:
             combinedPostings.append(postingList1[i])
             i += 1
+
         else:
             combinedPostings.append(postingList2[j])
             j += 1
@@ -267,16 +283,20 @@ def combineFiles(file1, file2, output_file):
             key1, postingList1 = ParseLineToKeyPostingPair(line1)
             key2, postingList2 = ParseLineToKeyPostingPair(line2)
             
+            # After parsing postings into classes, compare, and reformat into text
             if key1 == key2:
+                # If the keys are the same, combine the posting values
                 combinedPostings = combinePostings(postingList1, postingList2)
                 postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in combinedPostings)
                 outf.write(f"{key1}~{postingsString}\n")
                 line1 = f1.readline().strip()
                 line2 = f2.readline().strip()
+
             elif key1 < key2:
                 postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList1)
                 outf.write(f"{key1}~{postingsString}\n")
                 line1 = f1.readline().strip()
+
             else:
                 postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList2)
                 outf.write(f"{key2}~{postingsString}\n")
@@ -408,9 +428,11 @@ def areSimilarSimHashes(firstSimHash, secondSimHash, threshold):
 
 def generateSingleFileIndex(inputFile, outputFile):
         
+    # If only a single file of inverted indexes, simply copy it to the final index after calculating tfidf
     with open(inputFile, 'r') as f, open(outputFile, 'w') as outf:
         line = f.readline().strip()
         while line:
+            # Parsing will calculate tf-idf
             key, postingList = ParseLineToKeyPostingPair(line)
             postingsString = ','.join(f'[{p.docID};{p.freq};{p.boldCount};{p.headerCount};{p.titleCount};{p.tf};{p.idf}]' for p in postingList)
             outf.write(f"{key}~{postingsString}\n")
@@ -421,6 +443,7 @@ def generateIndexOfIndex(indexFile):
     indexOfIndex = dict()
     currentIndex = 0
 
+    # Read through the index file and store the text position in the index of index hashmap
     with open(indexFile, 'r') as f:
         line = f.readline().strip()
         while line:
@@ -440,10 +463,15 @@ if __name__ == "__main__":
 
     totalTextFiles = []
 
+    # Check for arguments
     if len(sys.argv) > 2:
+
+        # Parse arguments and check if they are valid
         argument = sys.argv[1]
         batchSize = int(sys.argv[2])
+
         if argument == "ANA" or argument == "DEV":
+            # Set the current path to the correct folder
             currentPath = currentPath + analyst_folder if argument == "ANA" else currentPath + dev_folder
             with shelve.open(f"{argument}Info.shelve") as dataInfo:
                     
@@ -458,6 +486,7 @@ if __name__ == "__main__":
                     generateSingleFileIndex(totalTextFiles[0], "FinalCombined.txt")
                     os.remove(totalTextFiles[0])
                 else:
+                    # Combine all inverted index files into a single index file
                     combinedIndex = totalTextFiles.pop(0)
                     i = 0
                     for index in totalTextFiles:
@@ -474,8 +503,7 @@ if __name__ == "__main__":
                 generateIndexOfIndex("FinalCombined.txt")
 
                 print("Finished combining indexes")
-
-                
+                # Store index information into a shelve
                 dataInfo["indexedDocumesnts"] = invertedIndexID
                 dataInfo["skippedDocuments"] = documentsSkipped
                 dataInfo["uniqueTokens"] = len(uniqueWords)

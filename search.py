@@ -16,7 +16,8 @@ def intersectPostings(posting1, posting2):
     while i < len(posting1) and j < len(posting2):
 
         if posting1[i].docID == posting2[j].docID:
-            newPosting = Posting(posting1[i].docID, posting1[i].count + posting2[j].count, posting1[i].boldCount + posting2[j].boldCount, posting1[i].headerCount + posting2[j].headerCount, posting1[i].titleCount + posting2[j].titleCount, tf=posting1[i].tf + posting2[j].tf, idf=posting1[i].idf + posting2[j].idf)
+            # If they have the same id, combine all of their values and recalculate the tf-idf
+            newPosting = Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, posting1[i].boldCount + posting2[j].boldCount, posting1[i].headerCount + posting2[j].headerCount, posting1[i].titleCount + posting2[j].titleCount, tf=posting1[i].tf + posting2[j].tf, idf=posting1[i].idf + posting2[j].idf)
             newPosting.tfidf = posting1[i].tfidf + posting2[j].tfidf
             merged.append(newPosting)
             i += 1
@@ -79,52 +80,56 @@ if __name__ == "__main__":
     # Load index of index from json file
     with open("indexOfIndex.json", "r") as f:
         indexMap = json.load(f)
-    # Load URL map from json file
-    with open("URLMap.json", "r") as f:
-        urlMap = json.load(f)
 
-    while(1):
-        print("Please input your query:")
-        query = input()
+    # Load url map from shelve file
+    with shelve.open("UrlMap.shelve") as urlMap:
 
-        print("Please input the amount of results you would like:")
-        count = int(input())
-        
-        start = time.time()
+        while(1):
+            print("Please input your query:")
+            query = input()
 
-        # Find all query results
-
-        totalQueries = [ps.stem(quer) for quer in query.split()]
-
-        totalPostings = []
-        
-        for query in totalQueries:
-            if query in indexMap:
-                seekPosition = indexMap[query]
-                with open("FinalCombined.txt", "r") as indexFile:
-                    indexFile.seek(seekPosition)
-                    line = indexFile.readline().strip()
-                    key, postings = ParseLineToKeyPostingPair(line)
-                    totalPostings.append(postings)
-            else:
-                totalPostings.append([])
-
-        finalPostings = mergePostingLists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
+            print("Please input the amount of results you would like:")
+            count = int(input())
             
-        finalPostings.sort(key=lambda x: (x.tfidf * (1 + (BOLDWEIGHT * x.boldCount) + (HEADERWEIGHT * x.headerCount) + (TITLEWEIGHT * x.titleCount))), reverse=True) # Basic ranking by tf-idf
+            start = time.time()
 
-        if not finalPostings:
-            print("----------No results found----------")
-            continue
+            # Find all query results
 
-        end = time.time()
-        print(f"Time to search : {end - start}")
+            totalQueries = [ps.stem(quer) for quer in query.split()]
 
-        print(f"----------Top results----------")
+            totalPostings = []
+            
+            for query in totalQueries:
+                if query in indexMap:
+                    seekPosition = indexMap[query]
+                    # use index of index and seek to find token mapping to postings in txt file
+                    with open("FinalCombined.txt", "r") as indexFile:
+                        indexFile.seek(seekPosition)
+                        line = indexFile.readline().strip()
+                        # Parse line into key and list of postings
+                        key, postings = ParseLineToKeyPostingPair(line)
+                        totalPostings.append(postings)
+                else:
+                    totalPostings.append([])
 
-        for i in range(count):
-            if i >= len(finalPostings):
-                print("----------No more results found----------")
-                break
-            urlInfo = urlMap[str(finalPostings[i].docID)]
-            print(f"#{i+1}: {urlInfo[0]} ({urlInfo[1]})")
+            finalPostings = mergePostingLists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
+            # Rank postings by their tf-idf score, along with the weight of bold, header, and title tags    
+            finalPostings.sort(key=lambda x: (x.tfidf * (1 + (BOLDWEIGHT * x.boldCount) + (HEADERWEIGHT * x.headerCount) + (TITLEWEIGHT * x.titleCount))), reverse=True)
+
+            if not finalPostings:
+                print("----------No results found----------")
+                continue
+
+            end = time.time()
+            print(f"Time to search : {end - start}")
+
+            print(f"----------Top results----------")
+
+            # For each requested website:
+            for i in range(count):
+                if i >= len(finalPostings):
+                    print("----------No more results found----------")
+                    break
+                urlInfo = urlMap[str(finalPostings[i].docID)]
+                # Display the website title as well as the url
+                print(f"#{i+1}: {urlInfo[0].strip()} ({urlInfo[1].strip()})")

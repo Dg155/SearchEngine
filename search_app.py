@@ -19,7 +19,9 @@ import shelve
 # Setting window background to white
 Window.clearcolor = (1, 1, 1, 1)
 
-FOLDERNAME = "ANALYST"
+BOLDWEIGHT = 0.2
+HEADERWEIGHT = 1
+TITLEWEIGHT = 2
 
 class SearchScreen(Screen):
     def build(self):
@@ -125,16 +127,19 @@ class ResultsScreen(Screen):
         for query in totalQueries:
             if query in indexMap:
                 seekPosition = indexMap[query]
+                # use index of index and seek to find token mapping to postings in txt file
                 with open("FinalCombined.txt", "r") as indexFile:
                     indexFile.seek(seekPosition)
                     line = indexFile.readline().strip()
+                    # Parse line into key and list of postings
                     key, postings = self.ParseLineToKeyPostingPair(line)
                     totalPostings.append(postings)
             else:
                 totalPostings.append([])
         
-        self.final_postings = self.merge_posting_lists(totalPostings) if len(totalPostings) > 1 else totalPostings[0]
-        self.final_postings.sort(key=lambda x: (x.tfidf), reverse=True)
+        self.final_postings = self.merge_posting_lists(totalPostings) if len(totalPostings) > 1 else totalPostings[0] # Merge posting lists if necessary
+        # Rank postings by their tf-idf score, along with the weight of bold, header, and title tags   
+        self.final_postings.sort(key=lambda x: (x.tfidf * (1 + (BOLDWEIGHT * x.boldCount) + (HEADERWEIGHT * x.headerCount) + (TITLEWEIGHT * x.titleCount))), reverse=True)
 
         end = time.time()
         self.search_time = end - start
@@ -150,9 +155,12 @@ class ResultsScreen(Screen):
             posting = posting.strip('[]').split(';') # Remove brackets and split into values
             docID = int(posting[0])
             count = int(posting[1])
-            termFreq = float(posting[2])
-            inverseDocFreq = float(posting[3])
-            postings.append(Posting(docID, count, tf=termFreq, idf=inverseDocFreq))
+            boldCount = int(posting[2])
+            headerCount = int(posting[3])
+            titleCount = int(posting[4])
+            termFreq = float(posting[5])
+            inverseDocFreq = float(posting[6])
+            postings.append(Posting(docID, count, boldCount, headerCount, titleCount, tf=termFreq, idf=inverseDocFreq))
         return key, postings
 
     def merge_posting_lists(self, totalPostings):
@@ -182,9 +190,9 @@ class ResultsScreen(Screen):
         while i < len(posting1) and j < len(posting2):
 
             if posting1[i].docID == posting2[j].docID:
-                
-                newPosting = Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, tf=posting1[i].tf + posting2[i].tf, idf=posting1[i].idf + posting2[i].idf)
-                newPosting.tfidf = posting1[i].tfidf + posting2[i].tfidf
+                # If they have the same id, combine all of their values and recalculate the tf-idf
+                newPosting = Posting(posting1[i].docID, posting1[i].freq + posting2[j].freq, posting1[i].boldCount + posting2[j].boldCount, posting1[i].headerCount + posting2[j].headerCount, posting1[i].titleCount + posting2[j].titleCount, tf=posting1[i].tf + posting2[j].tf, idf=posting1[i].idf + posting2[j].idf)
+                newPosting.tfidf = posting1[i].tfidf + posting2[j].tfidf
                 merged.append(newPosting)
                 i += 1
                 j += 1
